@@ -236,8 +236,14 @@ begin
    end;
    Assign(OldF, FileName);
    if (FileExists(FileName)) then
-      Erase(OldF);
-   Rename(F, FileName);
+   begin
+      {$I-} Erase(OldF); {$I+}
+      if (IOResultValue <> 0) then
+         RunError(IOResultValue);
+   end;
+   {$I-} Rename(F, FileName); {$I+}
+   if (IOResultValue <> 0) then
+      RunError(IOResultValue);
 end;
 
 function ReadObjectFromFile(FileName: RawByteString): TStorable;
