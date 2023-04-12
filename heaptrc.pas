@@ -13,6 +13,8 @@
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
  **********************************************************************}
+
+{$checkpointer off}
 unit heaptrc;
 interface
 
@@ -20,17 +22,20 @@ interface
 
 {$ifdef FPC_HEAPTRC_EXTRA}
   {$define EXTRA}
+  {$inline off}
 {$endif FPC_HEAPTRC_EXTRA}
 
-{$checkpointer off}
-{$goto on}
 {$TYPEDADDRESS on}
 
 {$if defined(win32) or defined(wince)}
   {$define windows}
 {$endif}
 
+{$Q-}
+{$R-}
+
 Procedure DumpHeap;
+Procedure DumpHeap(SkipIfNoLeaks : Boolean);
 
 { define EXTRA to add more
   tests :
@@ -47,15 +52,18 @@ type
 procedure SetHeapExtraInfo(size : ptruint;fillproc : tfillextrainfoproc;displayproc : tdisplayextrainfoproc);
 
 { Redirection of the output to a file }
-procedure SetHeapTraceOutput(const name : string);
+procedure SetHeapTraceOutput(const name : string);overload;
+procedure SetHeapTraceOutput(var ATextOutput : Text);overload;
+
+procedure CheckPointer(p : pointer);
 
 const
   { tracing level
     splitted in two if memory is released !! }
 {$ifdef EXTRA}
-  tracesize = 16;
-{$else EXTRA}
   tracesize = 32;
+{$else EXTRA}
+  tracesize = 16;
 {$endif EXTRA}
   { install heaptrc memorymanager }
   useheaptrace : boolean=true;
@@ -76,10 +84,17 @@ const
   { add a small footprint at the end of memory blocks, this
     can check for memory overwrites at the end of a block }
   add_tail : boolean = true;
+  tail_size : longint = sizeof(ptruint);
+
   { put crc in sig
     this allows to test for writing into that part }
   usecrc : boolean = true;
 
+  printleakedblock: boolean = false;
+  printfaultyblock: boolean = false;
+  maxprintedblocklength: integer = 128;
+
+  GlobalSkipIfNoLeaks : Boolean = False;
 
 implementation
 
@@ -95,6 +110,9 @@ const
   { indicates where the output will be redirected }
   { only set using environment variables          }
   outputstr : shortstring = '';
+  ReleaseSig = $AAAAAAAA;
+  AllocateSig = $DEADBEEF;
+  CheckSig = $12345678;
 
 type
   pheap_extra_info = ^theap_extra_info;
@@ -126,7 +144,7 @@ type
     release_sig : longword;
     prev_valid  : pheap_mem_info;
 {$endif EXTRA}
-    calls    : array [1..tracesize] of pointer;
+    calls    : array [1..tracesize] of codepointer;
     exact_info_size : word;
     extra_info_size : word;
     extra_info      : pheap_extra_info;
@@ -151,7 +169,7 @@ type
   end;
 
 var
-  useownfile : boolean;
+  useownfile, useowntextoutput : boolean;
   ownfile : text;
 {$ifdef EXTRA}
   error_file : text;
@@ -160,7 +178,12 @@ var
   main_relo_todolist: ppheap_mem_info;
   orphaned_info: theap_info;
   todo_lock: trtlcriticalsection;
+  textoutput : ^text;
+{$ifdef FPC_HAS_FEATURE_THREADING}
 threadvar
+{$else}
+var
+{$endif}
   heap_info: theap_info;
 
 {*****************************************************************************
@@ -169,6 +192,9 @@ threadvar
 
 var
   Crc32Tbl : array[0..255] of longword;
+const
+  Crc32Seed = $ffffffff;
+  Crc32Pattern = $edb88320;
 
 procedure MakeCRC32Tbl;
 var
@@ -180,7 +206,7 @@ begin
      crc:=i;
      for n:=1 to 8 do
       if odd(crc) then
-       crc:=(crc shr 1) xor $edb88320
+       crc:=(crc shr 1) xor longword(CRC32Pattern)
       else
        crc:=crc shr 1;
      Crc32Tbl[i]:=crc;
@@ -207,16 +233,16 @@ var
    crc : longword;
    pl : pptruint;
 begin
-   crc:=cardinal($ffffffff);
+   crc:=longword(CRC32Seed);
    crc:=UpdateCrc32(crc,p^.size,sizeof(ptruint));
-   crc:=UpdateCrc32(crc,p^.calls,tracesize*sizeof(ptruint));
+   crc:=UpdateCrc32(crc,p^.calls,tracesize*sizeof(codepointer));
    if p^.extra_info_size>0 then
      crc:=UpdateCrc32(crc,p^.extra_info^,p^.exact_info_size);
    if add_tail then
      begin
         { Check also 4 bytes just after allocation !! }
-        pl:=pointer(p)+p^.extra_info_size+sizeof(theap_mem_info)+p^.size;
-        crc:=UpdateCrc32(crc,pl^,sizeof(ptruint));
+        pl:=pointer(p)+sizeof(theap_mem_info)+p^.size;
+        crc:=UpdateCrc32(crc,pl^,tail_size);
      end;
    calculate_sig:=crc;
 end;
@@ -227,9 +253,9 @@ var
    crc : longword;
    pl : pptruint;
 begin
-   crc:=$ffffffff;
+   crc:=longword(CRC32Seed);
    crc:=UpdateCrc32(crc,p^.size,sizeof(ptruint));
-   crc:=UpdateCrc32(crc,p^.calls,tracesize*sizeof(ptruint));
+   crc:=UpdateCrc32(crc,p^.calls,tracesize*sizeof(codepointer));
    if p^.extra_info_size>0 then
      crc:=UpdateCrc32(crc,p^.extra_info^,p^.exact_info_size);
    { Check the whole of the whole allocation }
@@ -240,7 +266,7 @@ begin
      begin
         { Check also 4 bytes just after allocation !! }
         pl:=pointer(p)+p^.extra_info_size+sizeof(theap_mem_info)+p^.size;
-        crc:=UpdateCrc32(crc,pl^,sizeof(ptruint));
+        crc:=UpdateCrc32(crc,pl^,tail_size);
      end;
    calculate_release_sig:=crc;
 end;
@@ -255,19 +281,52 @@ function InternalFreeMemSize(loc_info: pheap_info; p: pointer; pp: pheap_mem_inf
   size: ptruint; release_todo_lock: boolean): ptruint; forward;
 function TraceFreeMem(p: pointer): ptruint; forward;
 
+procedure printhex(p : pointer; const size : PtrUInt; var ptext : text);
+var s: PtrUInt;
+ i: Integer;
+begin
+  s := size;
+  if s > maxprintedblocklength then
+    s := maxprintedblocklength;
+
+  for i:=0 to s-1 do
+    write(ptext, hexstr(pbyte(p + i)^,2));
+
+  if size > maxprintedblocklength then
+    writeln(ptext,'.. - ')
+  else
+    writeln(ptext, ' - ');
+
+  for i:=0 to s-1 do
+    if pchar(p + sizeof(theap_mem_info) + i)^ < ' ' then
+      write(ptext, ' ')
+    else
+      write(ptext, pchar(p + i)^);
+
+  if size > maxprintedblocklength then
+    writeln(ptext,'..')
+  else
+    writeln(ptext);
+end;
+
 procedure call_stack(pp : pheap_mem_info;var ptext : text);
 var
   i  : ptruint;
 begin
   writeln(ptext,'Call trace for block $',hexstr(pointer(pp)+sizeof(theap_mem_info)),' size ',pp^.size);
-  if (pp^.size >= 8) then
-    writeln(ptext,'First eight bytes: $', hexstr(PtrUInt(Pointer(pointer(pp)+sizeof(theap_mem_info))^), 16));
+  if printleakedblock then
+    begin
+      write(ptext, 'Block content: ');
+      printhex(pointer(pp) + sizeof(theap_mem_info), pp^.size, ptext);
+    end;
+
   for i:=1 to tracesize do
    if pp^.calls[i]<>nil then
      writeln(ptext,BackTraceStrFunc(pp^.calls[i]));
+
   { the check is done to be sure that the procvar is not overwritten }
   if assigned(pp^.extra_info) and
-     (pp^.extra_info^.check=$12345678) and
+     (pp^.extra_info^.check=cardinal(CheckSig)) and
      assigned(pp^.extra_info^.displayproc) then
    pp^.extra_info^.displayproc(ptext,@pp^.extra_info^.data);
 end;
@@ -287,7 +346,7 @@ begin
      writeln(ptext,BackTraceStrFunc(pp^.calls[i]));
   { the check is done to be sure that the procvar is not overwritten }
   if assigned(pp^.extra_info) and
-     (pp^.extra_info^.check=$12345678) and
+     (pp^.extra_info^.check=cardinal(CheckSig)) and
      assigned(pp^.extra_info^.displayproc) then
    pp^.extra_info^.displayproc(ptext,@pp^.extra_info^.data);
 end;
@@ -298,14 +357,53 @@ begin
   Writeln(ptext,'Marked memory at $',HexStr(pointer(p)+sizeof(theap_mem_info)),' released');
   call_free_stack(p,ptext);
   Writeln(ptext,'freed again at');
-  dump_stack(ptext,get_caller_frame(get_frame));
+  dump_stack(ptext,1);
 end;
 
 procedure dump_error(p : pheap_mem_info;var ptext : text);
 begin
   Writeln(ptext,'Marked memory at $',HexStr(pointer(p)+sizeof(theap_mem_info)),' invalid');
   Writeln(ptext,'Wrong signature $',hexstr(p^.sig,8),' instead of ',hexstr(calculate_sig(p),8));
-  dump_stack(ptext,get_caller_frame(get_frame));
+  if printfaultyblock then
+    begin
+      write(ptext, 'Block content: ');
+      printhex(pointer(p) + sizeof(theap_mem_info), p^.size, ptext);
+    end;
+  dump_stack(ptext,1);
+end;
+
+function released_modified(p : pheap_mem_info;var ptext : text) : boolean;
+ var pl : pdword;
+     pb : pbyte;
+     i : longint;
+begin
+  released_modified:=false;
+  { Check tail_size bytes just after allocation !! }
+  pl:=pointer(p)+sizeof(theap_mem_info)+p^.size;
+  pb:=pointer(p)+sizeof(theap_mem_info);
+  for i:=0 to p^.size-1 do
+    if pb[i]<>$F0 then
+      begin
+        Writeln(ptext,'offset',i,':$',hexstr(i,2*sizeof(pointer)),'"',hexstr(pb[i],2),'"');
+        released_modified:=true;
+      end;
+  for i:=1 to (tail_size div sizeof(dword)) do
+    begin
+      if unaligned(pl^) <> AllocateSig then
+        begin
+          released_modified:=true;
+          writeln(ptext,'Tail modified after release at pos ',i*sizeof(ptruint));
+          printhex(pointer(p)+p^.extra_info_size+sizeof(theap_mem_info)+p^.size,tail_size,ptext);
+          break;
+        end;
+      inc(pointer(pl),sizeof(dword));
+    end;
+  if released_modified then
+    begin
+      dump_already_free(p,ptext);
+      if @stderr<>@ptext then
+        dump_already_free(p,stderr);
+    end;
 end;
 
 {$ifdef EXTRA}
@@ -328,10 +426,10 @@ procedure dump_wrong_size(p : pheap_mem_info;size : ptruint;var ptext : text);
 begin
   Writeln(ptext,'Marked memory at $',HexStr(pointer(p)+sizeof(theap_mem_info)),' invalid');
   Writeln(ptext,'Wrong size : ',p^.size,' allocated ',size,' freed');
-  dump_stack(ptext,get_caller_frame(get_frame));
+  dump_stack(ptext,1);
   { the check is done to be sure that the procvar is not overwritten }
   if assigned(p^.extra_info) and
-     (p^.extra_info^.check=$12345678) and
+     (p^.extra_info^.check=cardinal(CheckSig)) and
      assigned(p^.extra_info^.displayproc) then
    p^.extra_info^.displayproc(ptext,@p^.extra_info^.data);
   call_stack(p,ptext);
@@ -347,14 +445,14 @@ begin
   i:=0;
   while pp<>nil do
    begin
-     if ((pp^.sig<>$DEADBEEF) or usecrc) and
+     if ((pp^.sig<>longword(AllocateSig)) or usecrc) and
         ((pp^.sig<>calculate_sig(pp)) or not usecrc) and
-        (pp^.sig <>$AAAAAAAA) then
+        (pp^.sig <>longword(ReleaseSig)) then
       begin
         if useownfile then
           writeln(ownfile,'error in linked list of heap_mem_info')
         else
-          writeln(stderr,'error in linked list of heap_mem_info');
+          writeln(textoutput^,'error in linked list of heap_mem_info');
         RunError(204);
       end;
      if pp=p then
@@ -365,7 +463,7 @@ begin
        if useownfile then
          writeln(ownfile,'error in linked list of heap_mem_info')
        else
-         writeln(stderr,'error in linked list of heap_mem_info');
+         writeln(textoutput^,'error in linked list of heap_mem_info');
    end;
 end;
 
@@ -388,9 +486,13 @@ procedure try_finish_heap_free_todo_list(loc_info: pheap_info);
 begin
   if loc_info^.heap_free_todo <> nil then
   begin
+{$ifdef FPC_HAS_FEATURE_THREADING}
     entercriticalsection(todo_lock);
+{$endif}
     finish_heap_free_todo_list(loc_info);
+{$ifdef FPC_HAS_FEATURE_THREADING}
     leavecriticalsection(todo_lock);
+{$endif}
   end;
 end;
 
@@ -401,9 +503,7 @@ end;
 
 Function TraceGetMem(size:ptruint):pointer;
 var
-  allocsize,i : ptruint;
-  oldbp,
-  bp : pointer;
+  i, allocsize : ptruint;
   pl : pdword;
   p  : pointer;
   pp : pheap_mem_info;
@@ -411,8 +511,6 @@ var
 begin
   loc_info := @heap_info;
   try_finish_heap_free_todo_list(loc_info);
-  inc(loc_info^.getmem_size,size);
-  inc(loc_info^.getmem8_size,(size+7) and not 7);
 { Do the real GetMem, but alloc also for the info block }
 {$ifdef cpuarm}
   allocsize:=(size + 3) and not 3+sizeof(theap_mem_info)+extra_info_size;
@@ -420,7 +518,7 @@ begin
   allocsize:=size+sizeof(theap_mem_info)+extra_info_size;
 {$endif cpuarm}
   if add_tail then
-    inc(allocsize,sizeof(ptruint));
+    inc(allocsize,tail_size);
   { if ReturnNilIfGrowHeapFails is true
     SysGetMem can return nil }
   p:=SysGetMem(allocsize);
@@ -431,13 +529,18 @@ begin
     end;
   pp:=pheap_mem_info(p);
   inc(p,sizeof(theap_mem_info));
+  { Update getmem_size and getmem8_size only after successful call 
+    to SysGetMem }
+  inc(loc_info^.getmem_size,size);
+  inc(loc_info^.getmem8_size,(size+7) and not 7);
 { Create the info block }
-  pp^.sig:=$DEADBEEF;
+  pp^.sig:=longword(AllocateSig);
   pp^.todolist:=@loc_info^.heap_free_todo;
   pp^.todonext:=nil;
   pp^.size:=size;
   pp^.extra_info_size:=extra_info_size;
   pp^.exact_info_size:=exact_info_size;
+  fillchar(pp^.calls[1],sizeof(pp^.calls),#0);
   {
     the end of the block contains:
     <tail>   4 bytes
@@ -447,7 +550,7 @@ begin
    begin
      pp^.extra_info:=pointer(pp)+allocsize-extra_info_size;
      fillchar(pp^.extra_info^,extra_info_size,0);
-     pp^.extra_info^.check:=$12345678;
+     pp^.extra_info^.check:=cardinal(CheckSig);
      pp^.extra_info^.fillproc:=fill_extra_info_proc;
      pp^.extra_info^.displayproc:=display_extra_info_proc;
      if assigned(fill_extra_info_proc) then
@@ -461,28 +564,19 @@ begin
    pp^.extra_info:=nil;
   if add_tail then
     begin
-      pl:=pointer(pp)+allocsize-pp^.extra_info_size-sizeof(ptruint);
-{$ifdef FPC_SUPPORTS_UNALIGNED}
-      unaligned(pl^):=$DEADBEEF;
-{$else FPC_SUPPORTS_UNALIGNED}
-      pl^:=$DEADBEEF;
-{$endif FPC_SUPPORTS_UNALIGNED}
+      { Calculate position from start because of arm
+        specific alignment }
+      pl:=pointer(pp)+sizeof(theap_mem_info)+pp^.size;
+      for i:=1 to tail_size div sizeof(dword) do
+        begin
+          unaligned(pl^):=dword(AllocateSig);
+          inc(pointer(pl),sizeof(dword));
+        end;
     end;
   { clear the memory }
   fillchar(p^,size,#255);
   { retrieve backtrace info }
-  bp:=get_caller_frame(get_frame);
-
-  { valid bp? }
-  if (bp>=StackBottom) and (bp<(StackBottom + StackLength)) then
-    for i:=1 to tracesize do
-     begin
-       pp^.calls[i]:=get_caller_addr(bp);
-       oldbp:=bp;
-       bp:=get_caller_frame(bp);
-       if (bp<oldbp) or (bp>(StackBottom + StackLength)) then
-         break;
-     end;
+  CaptureBacktrace(1,tracesize,@pp^.calls[1]);
 
   { insert in the linked list }
   if loc_info^.heap_mem_root<>nil then
@@ -514,8 +608,6 @@ end;
 function CheckFreeMemSize(loc_info: pheap_info; pp: pheap_mem_info;
   size, ppsize: ptruint): boolean; inline;
 var
-  i: ptruint;
-  bp : pointer;
   ptext : ^text;
 {$ifdef EXTRA}
   pp2 : pheap_mem_info;
@@ -524,7 +616,7 @@ begin
   if useownfile then
     ptext:=@ownfile
   else
-    ptext:=@stderr;
+    ptext:=textoutput;
   inc(loc_info^.freemem_size,size);
   inc(loc_info^.freemem8_size,(size+7) and not 7);
   if not quicktrace then
@@ -532,13 +624,13 @@ begin
       if not(is_in_getmem_list(loc_info, pp)) then
        RunError(204);
     end;
-  if (pp^.sig=$AAAAAAAA) and not usecrc then
+  if (pp^.sig=longword(ReleaseSig)) then
     begin
        loc_info^.error_in_heap:=true;
        dump_already_free(pp,ptext^);
        if haltonerror then halt(1);
     end
-  else if ((pp^.sig<>$DEADBEEF) or usecrc) and
+  else if ((pp^.sig<>longword(AllocateSig)) or usecrc) and
         ((pp^.sig<>calculate_sig(pp)) or not usecrc) then
     begin
        loc_info^.error_in_heap:=true;
@@ -562,7 +654,7 @@ begin
        exit;
     end;
   { now it is released !! }
-  pp^.sig:=$AAAAAAAA;
+  pp^.sig:=longword(ReleaseSig);
   if not keepreleased then
     begin
        if pp^.next<>nil then
@@ -573,17 +665,8 @@ begin
          loc_info^.heap_mem_root:=loc_info^.heap_mem_root^.previous;
     end
   else
-    begin
-       bp:=get_caller_frame(get_frame);
-       if (bp>=StackBottom) and (bp<(StackBottom + StackLength)) then
-         for i:=(tracesize div 2)+1 to tracesize do
-          begin
-            pp^.calls[i]:=get_caller_addr(bp);
-            bp:=get_caller_frame(bp);
-            if not((bp>=StackBottom) and (bp<(StackBottom + StackLength))) then
-              break;
-          end;
-    end;
+    CaptureBacktrace(1,(tracesize div 2)-1,@pp^.calls[(tracesize div 2)+1]);
+
   inc(loc_info^.freemem_cnt);
   { clear the memory, $F0 will lead to GFP if used as pointer ! }
   fillchar((pointer(pp)+sizeof(theap_mem_info))^,size,#240);
@@ -630,11 +713,13 @@ begin
   extra_size:=pp^.extra_info_size;
   ppsize:= size+sizeof(theap_mem_info)+pp^.extra_info_size;
   if add_tail then
-    inc(ppsize,sizeof(ptruint));
+    inc(ppsize,tail_size);
   { do various checking }
   release_mem := CheckFreeMemSize(loc_info, pp, size, ppsize);
+{$ifdef FPC_HAS_FEATURE_THREADING}
   if release_todo_lock then
     leavecriticalsection(todo_lock);
+{$endif}
   if release_mem then
   begin
     { release the normal memory at least }
@@ -642,7 +727,7 @@ begin
     { return the correct size }
     dec(i,sizeof(theap_mem_info)+extra_size);
     if add_tail then
-      dec(i,sizeof(ptruint));
+      dec(i,tail_size);
     InternalFreeMemSize:=i;
   end else
     InternalFreeMemSize:=size;
@@ -666,7 +751,9 @@ begin
   begin
     if pp^.todolist = main_orig_todolist then
       pp^.todolist := main_relo_todolist;
+{$ifdef FPC_HAS_FEATURE_THREADING}
     entercriticalsection(todo_lock);
+{$endif}
     release_lock:=true;
     if pp^.todolist = @orphaned_info.heap_free_todo then
     begin
@@ -678,7 +765,9 @@ begin
       pp^.todonext := pp^.todolist^;
       pp^.todolist^ := pp;
       TraceFreeMemSize := pp^.size;
+{$ifdef FPC_HAS_FEATURE_THREADING}
       leavecriticalsection(todo_lock);
+{$endif}
       exit;
     end;
   end;
@@ -709,14 +798,14 @@ begin
   l:=SysMemSize(pp);
   dec(l,sizeof(theap_mem_info)+pp^.extra_info_size);
   if add_tail then
-   dec(l,sizeof(ptruint));
+   dec(l,tail_size);
   { this can never happend normaly }
   if pp^.size>l then
    begin
      if useownfile then
        dump_wrong_size(pp,l,ownfile)
      else
-       dump_wrong_size(pp,l,stderr);
+       dump_wrong_size(pp,l,textoutput^);
 
 {$ifdef EXTRA}
      dump_wrong_size(pp,l,error_file);
@@ -733,13 +822,10 @@ end;
 function TraceReAllocMem(var p:pointer;size:ptruint):Pointer;
 var
   newP: pointer;
-  allocsize,
-  movesize,
-  i  : ptruint;
-  oldbp,
-  bp : pointer;
+  i, allocsize,
+  movesize  : ptruint;
   pl : pdword;
-  pp : pheap_mem_info;
+  pp,prevpp{$ifdef EXTRA},ppv{$endif} : pheap_mem_info;
   oldsize,
   oldextrasize,
   oldexactsize : ptruint;
@@ -767,14 +853,14 @@ begin
   loc_info:=@heap_info;
   pp:=pheap_mem_info(p-sizeof(theap_mem_info));
   { test block }
-  if ((pp^.sig<>$DEADBEEF) or usecrc) and
+  if ((pp^.sig<>longword(AllocateSig)) or usecrc) and
      ((pp^.sig<>calculate_sig(pp)) or not usecrc) then
    begin
      loc_info^.error_in_heap:=true;
      if useownfile then
        dump_error(pp,ownfile)
      else
-       dump_error(pp,stderr);
+       dump_error(pp,textoutput^);
 {$ifdef EXTRA}
      dump_error(pp,error_file);
 {$endif EXTRA}
@@ -798,9 +884,10 @@ begin
   allocsize:=size+sizeof(theap_mem_info)+pp^.extra_info_size;
 {$endif cpuarm}
   if add_tail then
-   inc(allocsize,sizeof(ptruint));
+   inc(allocsize,tail_size);
   { Try to resize the block, if not possible we need to do a
     getmem, move data, freemem }
+  prevpp:=pp;
   if not SysTryResizeMem(pp,allocsize) then
    begin
      { get a new block }
@@ -821,9 +908,48 @@ begin
      p:=newp;
      traceReAllocMem := newp;
      exit;
+   end
+  else
+   begin
+     if (pp<>prevpp) then
+       begin
+         { We need to update the previous/next chains }
+         if assigned(pp^.previous) then
+           pp^.previous^.next:=pp;
+         if assigned(pp^.next) then
+           pp^.next^.previous:=pp;
+         if prevpp=loc_info^.heap_mem_root then
+           loc_info^.heap_mem_root:=pp;
+{$ifdef EXTRA}
+         { remove prevpp from prev_valid chain }
+         ppv:=loc_info^.heap_valid_last;
+         if (ppv=prevpp) then
+           loc_info^.heap_valid_last:=pp^.prev_valid
+         else
+           begin
+             while assigned(ppv) do
+               begin
+                 if (ppv^.prev_valid=prevpp) then
+                   begin
+                     ppv^.prev_valid:=pp^.prev_valid;
+                     if prevpp=loc_info^.heap_valid_first then
+                       loc_info^.heap_valid_first:=ppv;
+                     ppv:=nil;
+                   end
+                 else
+                   ppv:=ppv^.prev_valid;
+               end;
+           end;
+         { Reinsert new value in last position }
+         pp^.prev_valid:=loc_info^.heap_valid_last;
+         loc_info^.heap_valid_last:=pp;
+         if not assigned(loc_info^.heap_valid_first) then
+           loc_info^.heap_valid_first:=pp;
+{$endif EXTRA}
+       end;
    end;
 { Recreate the info block }
-  pp^.sig:=$DEADBEEF;
+  pp^.sig:=longword(AllocateSig);
   pp^.size:=size;
   pp^.extra_info_size:=oldextrasize;
   pp^.exact_info_size:=oldexactsize;
@@ -832,7 +958,7 @@ begin
    begin
      pp^.extra_info:=pointer(pp)+allocsize-pp^.extra_info_size;
      fillchar(pp^.extra_info^,extra_info_size,0);
-     pp^.extra_info^.check:=$12345678;
+     pp^.extra_info^.check:=cardinal(CheckSig);
      pp^.extra_info^.fillproc:=old_fill_extra_info_proc;
      pp^.extra_info^.displayproc:=old_display_extra_info_proc;
      if assigned(pp^.extra_info^.fillproc) then
@@ -842,13 +968,15 @@ begin
    pp^.extra_info:=nil;
   if add_tail then
     begin
-      pl:=pointer(pp)+allocsize-pp^.extra_info_size-sizeof(ptruint);
-{$ifdef FPC_SUPPORTS_UNALIGNED}
-      unaligned(pl^):=$DEADBEEF;
-{$else FPC_SUPPORTS_UNALIGNED}
-      pl^:=$DEADBEEF;
-{$endif FPC_SUPPORTS_UNALIGNED}
-    end;
+      { Calculate position from start because of arm
+        specific alignment }
+      pl:=pointer(pp)+sizeof(theap_mem_info)+pp^.size;
+      for i:=1 to tail_size div sizeof(dword) do
+        begin
+          unaligned(pl^):=dword(AllocateSig);
+          inc(pointer(pl),sizeof(dword));
+        end;
+   end;
   { adjust like a freemem and then a getmem, so you get correct
     results in the summary display }
   inc(loc_info^.freemem_size,oldsize);
@@ -856,16 +984,7 @@ begin
   inc(loc_info^.getmem_size,size);
   inc(loc_info^.getmem8_size,(size+7) and not 7);
   { generate new backtrace }
-  bp:=get_caller_frame(get_frame);
-  if (bp>=StackBottom) and (bp<(StackBottom + StackLength)) then
-    for i:=1 to tracesize do
-     begin
-       pp^.calls[i]:=get_caller_addr(bp);
-       oldbp:=bp;
-       bp:=get_caller_frame(bp);
-       if (bp<oldbp) or (bp>(StackBottom + StackLength)) then
-         break;
-     end;
+  CaptureBacktrace(1,tracesize,@pp^.calls[1]);
   { regenerate signature }
   if usecrc then
     pp^.sig:=calculate_sig(pp);
@@ -898,6 +1017,13 @@ var
    eend : ptruint; external name '_end';
 {$endif}
 
+{$ifdef freebsd}
+var
+   text_start: ptruint; external name '__executable_start';
+   etext: ptruint; external name '_etext';
+   eend : ptruint; external name '_end';
+{$endif}
+
 {$ifdef os2}
 (* Currently still EMX based - possibly to be changed in the future. *)
 var
@@ -912,6 +1038,11 @@ var
    edata : ptruint; external name '__data_end__';
    sbss : ptruint; external name '__bss_start__';
    ebss : ptruint; external name '__bss_end__';
+   TLSKey : PDWord; external name '_FPC_TlsKey';
+   TLSSize : DWord; external name '_FPC_TlsSize';
+
+function TlsGetValue(dwTlsIndex : DWord) : pointer;
+  {$ifdef wince}cdecl{$else}stdcall{$endif};external KernelDLL name 'TlsGetValue';
 {$endif}
 
 {$ifdef BEOS}
@@ -934,12 +1065,10 @@ var
   get_ebp,stack_top : longword;
   bss_end : longword;
 {$endif go32v2}
-{$ifdef morphos}
-  stack_top: longword;
-{$endif morphos}
+{$ifdef windows}
+  datap : pointer;
+{$endif windows}
   ptext : ^text;
-label
-  _exit;
 begin
   if p=nil then
     runerror(204);
@@ -949,7 +1078,7 @@ begin
   if useownfile then
     ptext:=@ownfile
   else
-    ptext:=@stderr;
+    ptext:=textoutput;
 
 {$ifdef go32v2}
   if ptruint(p)<$1000 then
@@ -962,11 +1091,11 @@ begin
   stack_top:=__stkbottom+__stklen;
   { allow all between start of code and end of bss }
   if ptruint(p)<=bss_end then
-    goto _exit;
+    exit;
   { stack can be above heap !! }
 
   if (ptruint(p)>=get_ebp) and (ptruint(p)<=stack_top) then
-    goto _exit;
+    exit;
 {$endif go32v2}
 
   { I don't know where the stack is in other OS !! }
@@ -974,41 +1103,53 @@ begin
   { inside stack ? }
   if (ptruint(p)>ptruint(get_frame)) and
      (p<StackTop) then
-    goto _exit;
-  { inside data ? }
-  if (ptruint(p)>=ptruint(@sdata)) and (ptruint(p)<ptruint(@edata)) then
-    goto _exit;
-
-  { inside bss ? }
-  if (ptruint(p)>=ptruint(@sbss)) and (ptruint(p)<ptruint(@ebss)) then
-    goto _exit;
+    exit;
+  { inside data, rdata ... bss }
+  if (ptruint(p)>=ptruint(@sdata)) and (ptruint(p)<ptruint(@ebss)) then
+    exit;
+  { is program multi-threaded and p inside Threadvar range? }
+  if TlsKey^<>-1 then
+    begin
+      datap:=TlsGetValue(tlskey^);
+      if ((ptruint(p)>=ptruint(datap)) and
+          (ptruint(p)<ptruint(datap)+TlsSize)) then
+        exit;
+    end;
 {$endif windows}
 
 {$IFDEF OS2}
   { inside stack ? }
   if (PtrUInt (P) > PtrUInt (Get_Frame)) and
      (PtrUInt (P) < PtrUInt (StackTop)) then
-    goto _exit;
+    exit;
   { inside data or bss ? }
   if (PtrUInt (P) >= PtrUInt (@etext)) and (PtrUInt (P) < PtrUInt (@eend)) then
-    goto _exit;
+    exit;
 {$ENDIF OS2}
 
 {$ifdef linux}
   { inside stack ? }
   if (ptruint(p)>ptruint(get_frame)) and
-     (ptruint(p)<$c0000000) then      //todo: 64bit!
-    goto _exit;
+     (ptruint(p)<ptruint(StackTop)) then
+    exit;
   { inside data or bss ? }
   if (ptruint(p)>=ptruint(@etext)) and (ptruint(p)<ptruint(@eend)) then
-    goto _exit;
+    exit;
 {$endif linux}
 
+{$ifdef freebsd}
+  { inside stack ? }
+  if (ptruint(p)>ptruint(get_frame)) and
+     (ptruint(p)<ptruint(StackTop)) then
+    exit;
+  { inside data or bss ? }
+  if (ptruint(p)>=ptruint(@text_start)) and (ptruint(p)<ptruint(@eend)) then
+    exit;
+{$endif linux}
 {$ifdef morphos}
   { inside stack ? }
-  stack_top:=ptruint(StackBottom)+StackLength;
-  if (ptruint(p)<stack_top) and (ptruint(p)>ptruint(StackBottom)) then
-    goto _exit;
+  if (ptruint(p)<ptruint(StackTop)) and (ptruint(p)>ptruint(StackBottom)) then
+    exit;
   { inside data or bss ? }
   {$WARNING data and bss checking missing }
 {$endif morphos}
@@ -1022,7 +1163,7 @@ begin
   // if we find the address in a known area in our current process,
   // then it is a valid one
   if area_for(p) <> B_ERROR then
-    goto _exit;
+    exit;
 {$endif BEOS}
 
   { first try valid list faster }
@@ -1037,12 +1178,12 @@ begin
         (ptruint(p)<=ptruint(pp)+sizeof(theap_mem_info)+extra_info_size+pp^.size) then
        begin
           { check allocated block }
-          if ((pp^.sig=$DEADBEEF) and not usecrc) or
+          if ((pp^.sig=longword(AllocateSig)) and not usecrc) or
              ((pp^.sig=calculate_sig(pp)) and usecrc) or
           { special case of the fill_extra_info call }
-             ((pp=loc_info^.heap_valid_last) and usecrc and (pp^.sig=$DEADBEEF)
+             ((pp=loc_info^.heap_valid_last) and usecrc and (pp^.sig=longword(AllocateSig))
               and loc_info^.inside_trace_getmem) then
-            goto _exit
+            exit
           else
             begin
               writeln(ptext^,'corrupted heap_mem_info');
@@ -1068,9 +1209,9 @@ begin
      if (ptruint(p)>=ptruint(pp)+sizeof(theap_mem_info)+ptruint(extra_info_size)) and
         (ptruint(p)<=ptruint(pp)+sizeof(theap_mem_info)+ptruint(extra_info_size)+ptruint(pp^.size)) then
         { allocated block }
-       if ((pp^.sig=$DEADBEEF) and not usecrc) or
+       if ((pp^.sig=longword(AllocateSig)) and not usecrc) or
           ((pp^.sig=calculate_sig(pp)) and usecrc) then
-          goto _exit
+          exit
        else
          begin
             writeln(ptext^,'pointer $',hexstr(p),' points into invalid memory block');
@@ -1086,9 +1227,8 @@ begin
       end;
    end;
   writeln(ptext^,'pointer $',hexstr(p),' does not point to valid memory block');
-  dump_error(p,ptext^);
+  dump_stack(ptext^,1);
   runerror(204);
-_exit:
 end;
 
 {*****************************************************************************
@@ -1096,6 +1236,75 @@ end;
 *****************************************************************************}
 
 procedure dumpheap;
+
+begin
+  DumpHeap(GlobalSkipIfNoLeaks);
+end;
+
+const
+{$ifdef BSD}   // dlopen is in libc on FreeBSD.
+  LibDL = 'c';
+{$else}
+  {$ifdef HAIKU}
+    LibDL = 'root';
+  {$else}
+    LibDL = 'dl';
+  {$endif}
+{$endif}
+{$if defined(LINUX) or defined(BSD)}
+type
+  Pdl_info = ^dl_info;
+  dl_info = record
+    dli_fname      : Pchar;
+    dli_fbase      : pointer;
+    dli_sname      : Pchar;
+    dli_saddr      : pointer;
+  end;
+
+// *BSD isn't flagged for "weak"  support in 3.2.2
+{$if defined(BSD) and defined (VER3_2_2)}
+  function _dladdr(Lib:pointer; info: Pdl_info): Longint; cdecl; external LibDL name 'dladdr';
+{$else}
+  function _dladdr(Lib:pointer; info: Pdl_info): Longint; cdecl; weakexternal LibDL name 'dladdr';
+{$endif}
+{$elseif defined(MSWINDOWS)}
+  function _GetModuleFileNameA(hModule:HModule;lpFilename:PAnsiChar;nSize:cardinal):cardinal;stdcall; external 'kernel32' name 'GetModuleFileNameA';
+{$endif}
+
+function GetModuleName:string;
+{$ifdef MSWINDOWS}
+var
+  sz:cardinal;
+  buf:array[0..8191] of char;
+{$endif}
+{$if defined(LINUX) or defined(BSD)}
+var
+  res:integer;
+  dli:dl_info;
+{$endif}
+begin
+  GetModuleName:='';
+{$if defined(LINUX) or defined(BSD)}
+  if assigned(@_dladdr) then
+    begin
+      res:=_dladdr(@ParamStr,@dli); { get any non-eliminated address in SO space }
+      if res<=0 then
+        exit;
+      if Assigned(dli.dli_fname) then
+        GetModuleName:=PAnsiChar(dli.dli_fname);
+    end
+  else
+    GetModuleName:=ParamStr(0);
+{$elseif defined(MSWINDOWS)}
+  sz:=_GetModuleFileNameA(hInstance,PChar(@buf),sizeof(buf));
+  if sz>0 then
+    setstring(GetModuleName,PAnsiChar(@buf),sz)
+{$else}
+  GetModuleName:=ParamStr(0);
+{$endif}
+end;
+
+procedure dumpheap(SkipIfNoLeaks : Boolean);
 var
   pp : pheap_mem_info;
   i : ptrint;
@@ -1108,20 +1317,18 @@ begin
   if useownfile then
     ptext:=@ownfile
   else
-    ptext:=@stderr;
+    ptext:=textoutput;
   pp:=loc_info^.heap_mem_root;
-{
-  Writeln(ptext^,'Heap dump by heaptrc unit');
+  if ((loc_info^.getmem_size-loc_info^.freemem_size)=0) and SkipIfNoLeaks then
+    exit;
+  Writeln(ptext^,'Heap dump by heaptrc unit of "'+GetModuleName()+'"');
   Writeln(ptext^,loc_info^.getmem_cnt, ' memory blocks allocated : ',
     loc_info^.getmem_size,'/',loc_info^.getmem8_size);
   Writeln(ptext^,loc_info^.freemem_cnt,' memory blocks freed     : ',
     loc_info^.freemem_size,'/',loc_info^.freemem8_size);
-}
-if (loc_info^.getmem_cnt-loc_info^.freemem_cnt > 0) then
   Writeln(ptext^,loc_info^.getmem_cnt-loc_info^.freemem_cnt,
     ' unfreed memory blocks : ',loc_info^.getmem_size-loc_info^.freemem_size);
   status:=SysGetFPCHeapStatus;
-{
   Write(ptext^,'True heap size : ',status.CurrHeapSize);
   if EntryMemUsed > 0 then
     Writeln(ptext^,' (',EntryMemUsed,' used in System startup)')
@@ -1134,7 +1341,6 @@ if (loc_info^.getmem_cnt-loc_info^.freemem_cnt > 0) then
     -EntryMemUsed;
   If ExpectedHeapFree<>status.CurrHeapFree then
     Writeln(ptext^,'Should be : ',ExpectedHeapFree);
-}
   i:=loc_info^.getmem_cnt-loc_info^.freemem_cnt;
   while pp<>nil do
    begin
@@ -1144,7 +1350,7 @@ if (loc_info^.getmem_cnt-loc_info^.freemem_cnt > 0) then
           Writeln(ptext^,'More memory blocks than expected');
           exit;
        end;
-     if ((pp^.sig=$DEADBEEF) and not usecrc) or
+     if ((pp^.sig=longword(AllocateSig)) and not usecrc) or
         ((pp^.sig=calculate_sig(pp)) and usecrc) then
        begin
           { this one was not released !! }
@@ -1152,9 +1358,11 @@ if (loc_info^.getmem_cnt-loc_info^.freemem_cnt > 0) then
             call_stack(pp,ptext^);
           dec(i);
        end
-     else if pp^.sig<>$AAAAAAAA then
+     else if pp^.sig<>longword(ReleaseSig) then
        begin
           dump_error(pp,ptext^);
+          if @stderr<>ptext then
+            dump_error(pp,stderr);
 {$ifdef EXTRA}
           dump_error(pp,error_file);
 {$endif EXTRA}
@@ -1167,6 +1375,12 @@ if (loc_info^.getmem_cnt-loc_info^.freemem_cnt > 0) then
           dump_change_after(pp,error_file);
           loc_info^.error_in_heap:=true;
        end
+{$else not EXTRA}
+     else
+       begin
+         if released_modified(pp,ptext^) then
+           exitcode:=203;
+       end;
 {$endif EXTRA}
        ;
      pp:=pp^.previous;
@@ -1182,7 +1396,9 @@ end;
 
 function TraceAllocMem(size:ptruint):Pointer;
 begin
-  TraceAllocMem:=SysAllocMem(size);
+  TraceAllocMem := TraceGetMem(size);
+  if Assigned(TraceAllocMem) then
+    FillChar(TraceAllocMem^, TraceMemSize(TraceAllocMem), 0);
 end;
 
 
@@ -1214,7 +1430,9 @@ end;
 procedure TraceRelocateHeap;
 begin
   main_relo_todolist := @heap_info.heap_free_todo;
+{$ifdef FPC_HAS_FEATURE_THREADING}
   initcriticalsection(todo_lock);
+{$endif}
 end;
 
 procedure move_heap_info(src_info, dst_info: pheap_info);
@@ -1259,9 +1477,13 @@ var
   loc_info: pheap_info;
 begin
   loc_info := @heap_info;
+{$ifdef FPC_HAS_FEATURE_THREADING}
   entercriticalsection(todo_lock);
+{$endif}
   move_heap_info(loc_info, @orphaned_info);
+{$ifdef FPC_HAS_FEATURE_THREADING}
   leavecriticalsection(todo_lock);
+{$endif}
 end;
 
 function TraceGetHeapStatus:THeapStatus;
@@ -1295,7 +1517,7 @@ begin
        Rewrite(ownfile);
        if IOResult<>0 then
          begin
-           Writeln(stderr,'[heaptrc] Unable to open "',name,'", writing output to stderr instead.');
+           Writeln(textoutput^,'[heaptrc] Unable to open "',name,'", writing output to stderr instead.');
            useownfile:=false;
            exit;
          end;
@@ -1305,6 +1527,12 @@ begin
    for i:=0 to Paramcount do
      write(ownfile,paramstr(i),' ');
    writeln(ownfile);
+end;
+
+procedure SetHeapTraceOutput(var ATextOutput : Text);
+Begin
+  useowntextoutput := True;
+  textoutput := @ATextOutput;
 end;
 
 procedure SetHeapExtraInfo( size : ptruint;fillproc : tfillextrainfoproc;displayproc : tdisplayextrainfoproc);
@@ -1338,12 +1566,18 @@ const
     GetFPCHeapStatus : @TraceGetFPCHeapStatus;
   );
 
+var
+  PrevMemoryManager : TMemoryManager;
+
 procedure TraceInit;
 begin
+  textoutput := @stderr;
+  useowntextoutput := false;
   MakeCRC32Tbl;
   main_orig_todolist := @heap_info.heap_free_todo;
   main_relo_todolist := nil;
   TraceInitThread;
+  GetMemoryManager(PrevMemoryManager);
   SetMemoryManager(TraceManager);
   useownfile:=false;
   if outputstr <> '' then
@@ -1360,6 +1594,17 @@ begin
       Rewrite(error_file);
     end;
 {$endif EXTRA}
+  { if multithreading was initialized before heaptrc gets initialized (this is currently
+    the case for windows dlls), then RelocateHeap gets never called and the lock
+    must be initialized already here,
+
+    however, IsMultithread is not set in this case on windows,
+    it is set only if a new thread is started
+  }
+{$IfNDef WINDOWS}
+  if IsMultithread then
+{$EndIf WINDOWS}
+    TraceRelocateHeap;
 end;
 
 procedure TraceExit;
@@ -1377,8 +1622,8 @@ begin
          end
        else
          begin
-           Writeln(stderr,'No heap dump by heaptrc unit');
-           Writeln(stderr,'Exitcode = ',exitcode);
+           Writeln(textoutput^,'No heap dump by heaptrc unit');
+           Writeln(textoutput^,'Exitcode = ',exitcode);
          end;
        if useownfile then
          begin
@@ -1387,12 +1632,16 @@ begin
          end;
        exit;
     end;
+  { Disable heaptrc memory manager to avoid problems }
+  SetMemoryManager(PrevMemoryManager);
   move_heap_info(@orphaned_info, @heap_info);
   dumpheap;
   if heap_info.error_in_heap and (exitcode=0) then
     exitcode:=203;
+{$ifdef FPC_HAS_FEATURE_THREADING}
   if main_relo_todolist <> nil then
     donecriticalsection(todo_lock);
+{$endif}
 {$ifdef EXTRA}
   Close(error_file);
 {$endif EXTRA}
@@ -1401,6 +1650,11 @@ begin
        useownfile:=false;
        close(ownfile);
      end;
+  if useowntextoutput then
+  begin
+    useowntextoutput := false;
+    close(textoutput^);
+  end;
 end;
 
 {$if defined(win32) or defined(win64)}
@@ -1431,17 +1685,56 @@ begin
      end;
    FreeEnvironmentStrings(p);
 end;
-{$else defined(win32) or defined(win64)}
-
-{$ifdef wince}
+{$elseif defined(wince)}
 Function GetEnv(P:string):Pchar;
 begin
   { WinCE does not have environment strings.
     Add some way to specify heaptrc options? }
   GetEnv:=nil;
 end;
-{$else wince}
-
+{$elseif defined(msdos) or defined(msxdos)}
+   type
+     PFarChar=^Char;far;
+     PPFarChar=^PFarChar;
+   var
+     envp: PPFarChar;external name '__fpc_envp';
+Function GetEnv(P:string):string;
+var
+  ep    : ppfarchar;
+  pc    : pfarchar;
+  i     : smallint;
+  found : boolean;
+Begin
+  getenv:='';
+  p:=p+'=';            {Else HOST will also find HOSTNAME, etc}
+  ep:=envp;
+  found:=false;
+  if ep<>nil then
+    begin
+      while (not found) and (ep^<>nil) do
+        begin
+          found:=true;
+          for i:=1 to length(p) do
+            if p[i]<>ep^[i-1] then
+              begin
+                found:=false;
+                break;
+              end;
+          if not found then
+            inc(ep);
+        end;
+    end;
+  if found then
+    begin
+      pc:=ep^+length(p);
+      while pc^<>#0 do
+        begin
+          getenv:=getenv+pc^;
+          Inc(pc);
+        end;
+    end;
+end;
+{$else}
 Function GetEnv(P:string):Pchar;
 {
   Searches the environment for a string with name p and
@@ -1476,13 +1769,13 @@ Begin
   else
    getenv:=nil;
 end;
-{$endif wince}
-{$endif win32}
+{$endif}
 
 procedure LoadEnvironment;
 var
   i,j : ptruint;
-  s   : string;
+  s,s2   : string;
+  err : word;
 begin
   s:=Getenv('HEAPTRC');
   if pos('keepreleased',s)>0 then
@@ -1493,6 +1786,24 @@ begin
    haltonerror:=false;
   if pos('haltonnotreleased',s)>0 then
    HaltOnNotReleased :=true;
+  if pos('skipifnoleaks',s)>0 then
+   GlobalSkipIfNoLeaks :=true;
+  if pos('tail_size=',s)>0 then
+    begin
+      i:=pos('tail_size=',s)+length('tail_size=');
+      s2:='';
+      while (i<=length(s)) and (s[i] in ['0'..'9']) do
+        begin
+          s2:=s2+s[i];
+          inc(i);
+        end;
+      val(s2,tail_size,err);
+      if err=0 then
+        tail_size:=((tail_size + sizeof(ptruint)-1) div sizeof(ptruint)) * sizeof(ptruint)
+      else
+        tail_size:=sizeof(ptruint);
+      add_tail:=(tail_size > 0);
+    end;
   i:=pos('log=',s);
   if i>0 then
    begin
