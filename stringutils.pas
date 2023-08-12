@@ -95,6 +95,9 @@ type
 type
    UTF8StringUtils = specialize DefaultUtils <UTF8String>;
 
+function CodepointArrayToUTF8String(const Value: TUnicodeCodepointArray): UTF8String;
+// there's no UTF8StringToCodepointArray -- use the enumerator
+
 implementation
 
 uses
@@ -436,6 +439,29 @@ end;
 operator enumerator (var Value: UTF8String): UTF8StringEnumerator; inline;
 begin
    Result := UTF8StringEnumerator.Create(@Value);
+end;
+
+function CodepointArrayToUTF8String(const Value: TUnicodeCodepointArray): UTF8String;
+var
+   Index, NewLength, Offset: Cardinal;
+   Character: TUTF8Sequence;
+begin
+   if (Length(Value) = 0) then
+   begin
+      Result := '';
+      exit;
+   end;
+   NewLength := 0;
+   for Index := Low(Value) to High(Value) do // $R-
+      Inc(NewLength, CodepointToUTF8Length(Value[Index]));
+   SetLength(Result, NewLength);
+   Offset := 1;
+   for Index := Low(Value) to High(Value) do // $R-
+   begin
+      Character := CodepointToUTF8(Value[Index]);
+      Move(Character.Start, Result[Offset], Character.Length);
+      Inc(Offset, Character.Length);
+   end;
 end;
 
 {$IFDEF DEBUG}
