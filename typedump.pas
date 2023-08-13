@@ -14,6 +14,8 @@ type
 
 generic function ParseEnumValue<T>(const Identifier: RawByteString; out Value: T): Boolean;
 generic function ListValues<T>(): TIdentifiers;
+generic function SetToStrings<T>(Values: T): TIdentifiers;
+generic function SetToString<T>(Values: T): RawByteString;
 
 implementation
 
@@ -347,6 +349,32 @@ begin
    end;   
 end;
 
+generic function SetToStrings<T>(Values: T): TIdentifiers;
+var
+   SetInfo, EnumInfo: PTypeInfo;
+   Index: Cardinal;
+   ExpandedValues: TBytes;
+begin
+   SetInfo := TypeInfo(T);
+   Assert(SetInfo^.Kind = tkSet, 'SetToString is only valid with sets');
+   EnumInfo := GetTypeData(SetInfo)^.CompType;
+   ExpandedValues := SetToArray(SetInfo, @Values);
+   SetLength(Result, Length(ExpandedValues));
+   if (Length(Result) > 0) then
+   begin
+      for Index := Low(ExpandedValues) to High(ExpandedValues) do // $R-
+      begin
+         Result[Index] := GetEnumName(EnumInfo, ExpandedValues[Index]);
+      end;
+   end;
+end;
+
+generic function SetToString<T>(Values: T): RawByteString;
+begin
+   Result := String.Join(', ', specialize SetToStrings<T>(Values));
+end;
+
+
 {$DEFINE TESTS}
 
 {$IFDEF TESTS}
@@ -366,7 +394,8 @@ begin
    Assert(GetDumpedTypeInfo(TypeInfo(True)) =
          'Type Boolean = Boolean:'#10 +
          '  Ordinal type: otUByte'#10 +
-         '  Range: 0..1'#10);
+             '  Range: 0..1'#10);
+   Assert(String.Join(', ', specialize SetToStrings<TSet>([c, a])) = 'a, c');
 end;
 {$ENDIF}
 

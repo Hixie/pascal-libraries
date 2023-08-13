@@ -62,7 +62,7 @@
   {$OBJECTCHECKS ON}
   {$IEEEERRORS ON}
   {$S+} // stack checking
-  { for memory heap problems, $DEFINE EXTRA}
+  // {$DEFINE EXTRA} // for memory heap problems
   {$DEFINE ENABLETESTS}
   // disable things that make debugging a pain in the neck
   {$INLINE OFF}
