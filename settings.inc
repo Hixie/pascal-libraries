@@ -30,6 +30,7 @@
 {$MODESWITCH ADVANCEDRECORDS+}
 {$MODESWITCH ISOUNARYMINUS-}
 {$MODESWITCH TYPEHELPERS+}
+{$MODESWITCH FUNCTIONREFERENCES+}
 {$BOOLEVAL OFF}
 {$TYPEDADDRESS ON}
 {$POINTERMATH OFF}
@@ -62,9 +63,10 @@
   {$OBJECTCHECKS ON}
   {$IEEEERRORS ON}
   {$S+} // stack checking
-  // {$DEFINE EXTRA} // for memory heap problems
+  // {$DEFINE EXTRA} // for memory heap problems; also need to add a copy of heaptrc.pp in this directory
   {$DEFINE ENABLETESTS}
   // disable things that make debugging a pain in the neck
   {$INLINE OFF}
+  {$OPTIMIZATION OFF}
   {$STACKFRAMES ON}
 {$ENDIF}

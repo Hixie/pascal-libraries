@@ -9,8 +9,8 @@ uses sysutils, unicode, hashtable, hashset, stringutils, typinfo;
 type
    TTextStream = class;
    TClassLookup = function (ClassName: UTF8String): TClass;
-   TCreator = function (ClassType: TClass; Stream: TTextStream): TObject;
-   
+   TCreator = reference to function (ClassType: TClass; Stream: TTextStream): TObject;
+
    TTextStream = class abstract
      public
       type
@@ -563,7 +563,7 @@ end;
 procedure TTextStreamProperties.Advance();
 begin
    Assert(not FDone);
-   Assert((FName = '') xor FActive);
+   {$IFOPT C+} Assert((FName = '') xor FActive); {$ENDIF}
    if (FName <> '') then
       FStream.ExpectPunctuation(';');
    if (FStream.PeekPunctuation() <> '}') then

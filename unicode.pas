@@ -9,7 +9,8 @@ const
    {$IFOPT C+} kNone = -2; {$ENDIF}
 
 type
-   TUnicodeCodepointRange = type {$IFOPT C+} -2 {$ELSE} -1 {$ENDIF} ..$10FFFF;
+   TUnicodeCodepointRangeInternal = {$IFOPT C+} -2 {$ELSE} -1 {$ENDIF} ..$10FFFF;
+   TUnicodeCodepointRange = type TUnicodeCodepointRangeInternal;
    TUnicodeCodepoint = record
     private
      FValue: TUnicodeCodepointRange;
