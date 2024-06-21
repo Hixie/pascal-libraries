@@ -14,9 +14,6 @@ type
 
 procedure HexDump(var Data; const Size, SubSize: Cardinal);
 
-// XXX why do we have this here and in exceptions.pas?
-function GetStackTrace(): AnsiString;
-
 {$IFNDEF OPT}
 function SetHeapInfo(S: THeapInfo): THeapInfo;
 function SetHeapInfoTruncated(S: AnsiString): THeapInfo; // only adds the end of the string
@@ -55,44 +52,6 @@ begin
          Write(' ');
       end;
    end;
-end;
-
-function GetStackTrace(): AnsiString;
-// the following is a verbatim copy from http://wiki.freepascal.org/Logging_exceptions
-var
-  I: Longint;
-  prevbp: Pointer;
-  CallerFrame,
-  CallerAddress,
-  bp: Pointer;
-  Report: string;
-const
-  MaxDepth = maxint;
-begin
-  Report := '';
-  bp := get_frame;
-  // This trick skip SendCallstack item
-  // bp:= get_caller_frame(get_frame);
-  try
-    prevbp := bp - 1;
-    I := 0;
-    while bp > prevbp do begin
-       CallerAddress := get_caller_addr(bp);
-       CallerFrame := get_caller_frame(bp);
-       if (CallerAddress = nil) then
-         Break;
-       Report := Report + BackTraceStrFunc(CallerAddress) + LineEnding;
-       Inc(I);
-       if (I >= MaxDepth) or (CallerFrame = nil) then
-         Break;
-       prevbp := bp;
-       bp := CallerFrame;
-     end;
-   except
-     { prevent endless dump if an exception occured }
-   end;
-   // end of copy from http://wiki.freepascal.org/Logging_exceptions
-   Result := Report;
 end;
 
 {$IFNDEF OPT}

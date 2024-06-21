@@ -38,9 +38,11 @@ type
       function ProcessFrame(): Boolean; // return false if frame is bogus and we should disconnect
     // API for subclasses:
       procedure HandleMessage(s: UTF8String); virtual; abstract;
-      procedure WriteFrame(const s: UTF8String); {$IFDEF DEBUG} virtual; {$ENDIF}
+      procedure WriteLength(const Length: Int64);
     public
       constructor Create(Listener: TListenerSocket);
+      procedure WriteFrame(const s: UTF8String); {$IFDEF DEBUG} virtual; {$ENDIF} overload;
+      procedure WriteFrame(const Buf; const Length: Cardinal); {$IFDEF DEBUG} virtual; {$ENDIF} overload;
       property Ready: Boolean read FCanWriteFrames;
     end;
 
@@ -271,31 +273,46 @@ begin
    end;
 end;
 
+procedure TWebSocket.WriteLength(const Length: Int64);
+begin
+   if (Length > 65535) then
+      Write([127,
+             Byte((Length shr (8*7)) and $FF),
+             Byte((Length shr (8*6)) and $FF),
+             Byte((Length shr (8*5)) and $FF),
+             Byte((Length shr (8*4)) and $FF),
+             Byte((Length shr (8*3)) and $FF),
+             Byte((Length shr (8*2)) and $FF),
+             Byte((Length shr (8*1)) and $FF),
+             Byte((Length          ) and $FF)])
+   else // 126..65535
+   if (Length >= 126) then
+      Write([126,
+             Byte((Length shr (8*1)) and $FF),
+             Byte((Length          ) and $FF)])
+   else // 0..126
+      Write([Byte(Length)]);
+end;
+
 procedure TWebSocket.WriteFrame(const s: UTF8String);
 begin
    {$IFDEF WEBSOCKET_VERBOSE} Writeln('Sending: ', s); {$ENDIF}
    Assert(IsValidUTF8(s));
    Assert(FCanWriteFrames);
    Write([$81]); // unfragmented text frame
-   if (Length(s) > 65535) then
-      Write([127,
-             Byte((Length(s) shr 8*7) and $FF),
-             Byte((Length(s) shr 8*6) and $FF),
-             Byte((Length(s) shr 8*5) and $FF),
-             Byte((Length(s) shr 8*4) and $FF),
-             Byte((Length(s) shr 8*3) and $FF),
-             Byte((Length(s) shr 8*2) and $FF),
-             Byte((Length(s) shr 8*1) and $FF),
-             Byte((Length(s)        ) and $FF)])
-   else // 126..65535
-   if (Length(s) >= 126) then
-      Write([126,
-             Byte((Length(s) shr 8*1) and $FF),
-             Byte((Length(s)        ) and $FF)])
-   else // 0..126
-      Write([Byte(Length(s))]);
+   WriteLength(Length(s)); // $R-
    if (Length(s) > 0) then
       Write(s);
+end;
+
+procedure TWebSocket.WriteFrame(const Buf; const Length: Cardinal);
+begin
+   {$IFDEF WEBSOCKET_VERBOSE} Writeln('Sending ', Length, ' bytes'); {$ENDIF}
+   Assert(FCanWriteFrames);
+   Write([$82]); // unfragmented binary frame
+   WriteLength(Length);
+   if (Length > 0) then
+      Write(@Buf, Length);
 end;
 
 end.

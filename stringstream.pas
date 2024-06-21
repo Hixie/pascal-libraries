@@ -1,5 +1,4 @@
 {$MODE OBJFPC} { -*- delphi -*- }
-{$FATAL this is not checked in}
 {$INCLUDE settings.inc}
 unit stringstream;
 
@@ -19,7 +18,7 @@ type
       procedure Close();
     public
       constructor Create(const Input: UTF8String);
-      function ReadCardinal(): Cardinal;
+      function ReadCardinal(): Cardinal; // only supports values up to High(Longint)
       function ReadDouble(): Double;
       function ReadString(): UTF8String;
       function ReadString(const MaxLength: Cardinal): UTF8String;
@@ -32,39 +31,54 @@ type
    TStringStreamWriter = class
     private
       FValue: UTF8String;
-      {$IFOPT C+} FClosed: Boolean; {$ENDIF}
+      FClosed: Boolean;
     protected
-      procedure ProcessValue(const Value: UTF8String); virtual; abstract;
+      {$IFOPT C+} function GetDebugStarted(): Boolean; {$ENDIF}
     public
       constructor Create();
-      {$IFOPT C+} destructor Destroy(); override; {$ENDIF}
       procedure WriteCardinal(const Value: Cardinal);
       procedure WriteDouble(const Value: Double);
       procedure WriteString(const Value: UTF8String);
       procedure WriteBoolean(const Value: Boolean);
+      procedure Reset();
       procedure Close();
+      function Serialize(): UTF8String;
+      property Closed: Boolean read FClosed;
+      {$IFOPT C+} property DebugStarted: Boolean read GetDebugStarted; {$ENDIF}
    end;
-
-   {$IFDEF DEBUG}
-   TStringStreamWriterDebug = class(TStringStreamWriter)
-    private
-      FExpectation: UTF8String;
-      FSuccess: Boolean;
-    protected
-      procedure ProcessValue(const Value: UTF8String); override;
-    public
-      constructor Create(Expectation: UTF8String);
-      property Success: Boolean read FSuccess;
-   end;
-   {$ENDIF}
 
 implementation
 
 uses
-   sysutils, stringutils, exceptions;
+   sysutils, exceptions, utf8;
+
+const FloatFormat: TFormatSettings = (
+   CurrencyFormat: 1;
+   NegCurrFormat: 1;
+   ThousandSeparator: ',';
+   DecimalSeparator: '.';
+   CurrencyDecimals: 2;
+   DateSeparator: '-';
+   TimeSeparator: ':';
+   ListSeparator: ',';
+   CurrencyString: '$';
+   ShortDateFormat: 'yyyy-mm-dd';
+   LongDateFormat: 'dd" "mmmm" "yyyy';
+   TimeAMString: 'AM';
+   TimePMString: 'PM';
+   ShortTimeFormat: 'hh:nn';
+   LongTimeFormat: 'hh:nn:ss';
+   ShortMonthNames: ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec');
+   LongMonthNames: ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December');
+   ShortDayNames: ('Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat');
+   LongDayNames: ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday');
+   TwoDigitYearCenturyWindow: 50
+);
+
 
 constructor TStringStreamReader.Create(const Input: UTF8String);
 begin
+   Assert(Length(Input) < High(Cardinal));
    FInput := Input;
 end;
 
@@ -72,7 +86,7 @@ function TStringStreamReader.ReadUntilNull(const Terminal: Char): UTF8String;
 var
    Start: Cardinal;
 begin
-   Start := FPosition+1;
+   Start := FPosition+1; // $R-
    repeat
       Inc(FPosition);
       if (FPosition > Length(FInput)) then
@@ -87,7 +101,8 @@ end;
 
 procedure TStringStreamReader.Close();
 begin
-   FPosition := Length(FInput)+1; // move pointer to past the end
+   // move pointer to past the end
+   FPosition := Length(FInput)+1; // $R-
 end;
 
 function TStringStreamReader.ReadCardinal(): Cardinal;
@@ -97,29 +112,13 @@ begin
    Value := StrToIntDef(ReadUntilNull(), 0);
    if (Value < 0) then
       Value := 0;
-   Result := Value;
+   Result := Value; // $R-
 end;
 
 function TStringStreamReader.ReadDouble(): Double;
 begin
-   Result := XXX;
+   Result := StrToFloatDef(ReadUntilNull(), 0.0, FloatFormat); // $R-
 end;
-
-{ // this implements a size-prefixed field
-function TStringStreamReader.ReadByteString(): UTF8String;
-var
-   ExpectedLength: Cardinal;
-begin
-   ExpectedLength := ReadCardinal();
-   if (Length(FInput) - FPosition < ExpectedLength) then
-   begin
-      Result := '';
-      Close();
-   end;
-   Result := Copy(FInput, FPosition+1, ExpectedLength);
-   Inc(FPosition, ExpectedLength);
-end;
-}
 
 function TStringStreamReader.ReadString(): UTF8String;
 begin
@@ -180,6 +179,15 @@ constructor TStringStreamWriter.Create();
 begin
 end;
 
+{$IFOPT C+}
+function TStringStreamWriter.GetDebugStarted(): Boolean;
+begin
+   Result := FValue <> '';
+end;
+{$ENDIF}
+
+// TODO: this should not keep copying the string around
+
 procedure TStringStreamWriter.WriteCardinal(const Value: Cardinal);
 begin
    FValue := FValue + IntToStr(Value) + #0;
@@ -187,15 +195,8 @@ end;
 
 procedure TStringStreamWriter.WriteDouble(const Value: Double);
 begin
-   FValue := FValue + FloatToStrF(Value, ffExponent, 15, 0) + #0;
+   FValue := FValue + FloatToStrF(Value, ffExponent, 15, 0, FloatFormat) + #0;
 end;
-
-{ // this implements a size-prefixed field
-procedure TStringStreamWriter.WriteByteString(const Value: UTF8String);
-begin
-   FValue := FValue + IntToStr(Length(Value)) + #0 + Value;
-end;
-}
 
 procedure TStringStreamWriter.WriteString(const Value: UTF8String);
 begin
@@ -212,35 +213,22 @@ begin
       FValue := FValue + 'F' + #0;
 end;
 
+procedure TStringStreamWriter.Reset();
+begin
+   Assert(not FClosed);
+   FValue := '';
+end;
+
 procedure TStringStreamWriter.Close();
 begin
-   ProcessValue(FValue);
-   {$IFOPT C+} FClosed := True; {$ENDIF}
+   Assert(not FClosed);
+   FClosed := True;
 end;
 
-{$IFOPT C+}
-destructor TStringStreamWriter.Destroy();
+function TStringStreamWriter.Serialize(): UTF8String;
 begin
    Assert(FClosed);
-   inherited;
+   Result := FValue;
 end;
-{$ENDIF}
-
-
-{$IFDEF DEBUG}
-constructor TStringStreamWriterDebug.Create(Expectation: UTF8String);
-begin
-   inherited Create();
-   FExpectation := Expectation;
-end;
-
-procedure TStringStreamWriterDebug.ProcessValue(const Value: UTF8String);
-begin
-   if (Value = FExpectation) then
-      FSuccess := True
-   else
-      Writeln('Expected '#10'"', FExpectation, '", but got:'#10'"', Value, '"');
-end;
-{$ENDIF}
-
+   
 end.

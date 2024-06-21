@@ -96,7 +96,8 @@ while (<>) {
         }
     }
 
-    if (m!^([^(]+)\(([0-9]+),([0-9]+)\) Warning: (?:\([0-9]+\) )?Function (result) variable does not seem to initialized$!os or
+    if (m!^([^(]+)\(([0-9]+),([0-9]+)\) Hint: (?:\([0-9]+\) )?Function (result) variable does not seem to initialized$!os or
+        m!^([^(]+)\(([0-9]+),([0-9]+)\) Warning: (?:\([0-9]+\) )?Function (result) variable does not seem to initialized$!os or
         m!^([^(]+)\(([0-9]+),([0-9]+)\) Hint: (?:\([0-9]+\) )?Local variable "([^"]+)" does not seem to be initialized$!os or
         m!^([^(]+)\(([0-9]+),([0-9]+)\) Warning: (?:\([0-9]+\) )?Local variable "([^"]+)" does not seem to be initialized$!os or
         m!^([^(]+)\(([0-9]+),([0-9]+)\) Hint: (?:\([0-9]+\) )?Local variable "([^"]+)" of a managed type does not seem to be initialized$!os) {

@@ -14,7 +14,7 @@ uses
 
 const
    timeoutForever = -1;
-   kMaxBuffer = 1024 * 160; // max buffer 160KB per connection
+   DefaultMaxBuffer = 1024 * 160; // max buffer 160KB per connection
 
 type
    TBaseSocket = class;
@@ -32,6 +32,7 @@ type
       FSocketNumber: cint;
       function GetWriteDataPending(): Boolean; virtual; abstract;
     public
+      procedure ReportConnectionError(ErrorCode: cint); virtual;
       procedure Disconnect(); virtual; abstract;
       function Read(): Boolean; virtual; abstract;
       property Connected: Boolean read FConnected;
@@ -57,11 +58,15 @@ type
       FAddr: TINetSockAddr;
       FPendingWrites: Pointer;
       FPendingWritesLength: Cardinal;
+      FMaxBufferSize: Cardinal;
       FOnOverflow: TOverflowEvent;
       function InternalRead(Data: array of byte): Boolean; virtual; abstract; // return false if connection is bad
       function GetWriteDataPending(): Boolean; override;
+      procedure ConnectIpV4(Host: DWord; Port: Word);
+      procedure Preconnect(); virtual;
     public
-      constructor Create(Listener: TListenerSocket);
+      constructor Create(Listener: TListenerSocket); overload;
+      constructor Create(); overload;
       destructor Destroy(); override;
       procedure Disconnect(); override;
       function Read(): Boolean; override;
@@ -69,6 +74,7 @@ type
       procedure Write(const S: RawByteString); { Do not pass an empty string }
       procedure Write(const S: array of Byte); { Do not pass an empty array }
       procedure Write(const S: Pointer; const Len: Cardinal);
+      property MaxBufferSize: Cardinal read FMaxBufferSize write FMaxBufferSize;
       property OnOverflow: TOverflowEvent read FOnOverflow write FOnOverflow;
    end;
 
@@ -104,6 +110,10 @@ uses
    sysutils {$IFDEF LINUX}, linux {$ENDIF} {$IFDEF VERBOSE_NETWORK}, errors {$ENDIF}; // errors is for StrError
 
 // {$DEFINE DISABLE_NAGLE} // should not be necessary
+
+procedure TBaseSocket.ReportConnectionError(ErrorCode: cint);
+begin
+end;
 
 constructor TListenerSocket.Create(Port: Word);
 var
@@ -168,6 +178,7 @@ var
    {$ENDIF}
 begin
    inherited Create();
+   FMaxBufferSize := DefaultMaxBuffer;
    New(AddrLen);
    AddrLen^ := SizeOf(FAddr);
    FSocketNumber := fpAccept(Listener.FSocketNumber, PSockAddr(@FAddr), AddrLen);
@@ -184,8 +195,49 @@ begin
    Argument := 1;
    fpSetSockOpt(FSocketNumber, IPPROTO_TCP, TCP_NODELAY, @Argument, SizeOf(Argument));
    {$ENDIF}
-   FConnected := True;
+   Preconnect();
    {$IFDEF VERBOSE_NETWORK} Writeln('TNetworkSocket.Create() for ', FSocketNumber); {$ENDIF}
+end;
+
+constructor TNetworkSocket.Create();
+begin
+   inherited Create();
+end;
+
+procedure TNetworkSocket.ConnectIpV4(Host: DWord; Port: Word);
+var
+   ConnectResult: cint;
+   Address: PSockAddr;
+   {$IFOPT C+} Options: cint; {$ENDIF}
+   {$IFDEF DISABLE_NAGLE}
+   Argument: Integer;
+   {$ENDIF}
+begin
+   Assert(not FConnected);
+   New(Address);
+   Address^.sin_family := AF_INET;
+   Address^.sin_addr.s_addr := HToNL(Host);
+   Address^.sin_port := HToNS(Port);
+   try
+      FSocketNumber := fpSocket(Address^.sin_family, SOCK_STREAM or O_NONBLOCK, 0);
+      if (FSocketNumber < 0) then
+         raise ESocketError.Create(SocketError);
+      ConnectResult := fpConnect(FSocketNumber, Address, SizeOf(SockAddr));
+      if ((ConnectResult < 0) and (SocketError <> EINPROGRESS)) then
+         raise ESocketError.Create(SocketError);
+   finally
+      Dispose(Address);
+   end;
+   {$IFOPT C+}
+   Options := FpFcntl(FSocketNumber, F_GETFL);
+   Assert(Options and O_NONBLOCK > 0);
+   {$ENDIF}
+   {$IFDEF DISABLE_NAGLE}
+   Argument := 1;
+   fpSetSockOpt(FSocketNumber, IPPROTO_TCP, TCP_NODELAY, @Argument, SizeOf(Argument));
+   {$ENDIF}
+   Preconnect();
+   {$IFDEF VERBOSE_NETWORK} Writeln('TNetworkSocket.ConnectIpV4() for ', FSocketNumber); {$ENDIF}
 end;
 
 destructor TNetworkSocket.Destroy();
@@ -199,6 +251,11 @@ begin
       FPendingWritesLength := 0;
    end;
    inherited;
+end;
+
+procedure TNetworkSocket.Preconnect();
+begin
+   FConnected := True;
 end;
 
 procedure TNetworkSocket.Disconnect();
@@ -302,10 +359,9 @@ procedure TNetworkSocket.Write(const S: Pointer; const Len: Cardinal);
      for i := 0 to len-1 do // $R-
         system.Write(IntToHex(Byte((Msg+i)^), 2), ' ');
      Writeln();
-     {$IFDEF DEBUG}
-     Writeln(GetStackTrace());
-     Writeln('---');
-     {$ENDIF}
+        {$IFDEF VERBOSE_NETWORK_WITH_STACK_TRACES}
+        Writeln(GetStackTrace());
+        {$ENDIF}
      Result := Sockets.fpSend(s, msg, len, flags);
   end;
 {$ENDIF}
@@ -322,6 +378,8 @@ begin
    end;
    if (Len > 0) then
    begin
+      if (Len > FMaxBufferSize) then
+         FMaxBufferSize := Len;
       Assert(Assigned(S));
       if (FPendingWritesLength > 0) then
       begin
@@ -349,17 +407,16 @@ begin
    // time, and only then did the select loop get around to us.
    if (FPendingWritesLength > 0) then
    begin
-      // MSG_NOSIGNAL suppresses SIGPIPE on Linux
+      // MSG_NOSIGNAL suppresses SIGPIPE on Linux (turns it into EPIPE instead)
       FpSetErrNo(Low(SocketError)); // sentinel so we can tell if failure happened without any error code (otherwise we might see ESysENoTTY)
       Sent := fpSend(FSocketNumber, FPendingWrites, FPendingWritesLength, {$IFDEF Linux} MSG_NOSIGNAL {$ELSE} 0 {$ENDIF});
       if (Sent < FPendingWritesLength) then
       begin
-         if (Assigned(FOnOverflow) and
-             ((Sent >= 0) or
+         if (((Sent >= 0) or
               (SocketError = ESysEAgain) or
               (SocketError = ESysEWouldBlock) or
               (SocketError = ESysEIntr)) and
-             (FPendingWritesLength - Sent <= kMaxBuffer)) then
+             (FPendingWritesLength - Sent <= FMaxBufferSize)) then
          begin
             if (Sent > 0) then
             begin
@@ -384,7 +441,10 @@ begin
             {$IFDEF DEBUG}
             {$IFDEF VERBOSE_NETWORK} Writeln('Had overflow sending data to socket number ', FSocketNumber, '; sent ', Sent, ' bytes, now have ', FPendingWritesLength, ' bytes left to send.'); {$ENDIF}
             {$ENDIF}
-            FOnOverflow(Self);
+            if (Assigned(FOnOverflow)) then
+            begin
+               FOnOverflow(Self);
+            end;
          end
          else
          begin
@@ -398,24 +458,25 @@ begin
             // mostly for fun, document what error codes you get here
             // (the real reason is to find out if there's codes we'll get that are actual problems we should deal with)
             // see the man page for unix send(), |man 7 tcp|, and |man 7 ip| for descriptions of other possible codes
-            if ((SocketError <> Low(SocketError)) and // our sentinel value; see FpSetErrNo call above
-                (SocketError <> ESysEPipe) and // 32 = broken pipe (only on non-Linux; on Linux we set MSG_NOSIGNAL to prevent this)
+            if ((SocketError <> Low(SocketError)) and // our sentinel value; see FpSetErrNo call above; we probably overflowed FMaxBufferSize
+                (SocketError <> ESysEPipe) and // 32 = broken pipe (i.e. other side disconnected in some manner)
                 (SocketError <> ESysEConnReset) and // 104 = connection reset by peer
                 (SocketError <> ESysETimedOut) and // 110 = connection timed out
+                (SocketError <> ESysEConnRefused) and // 111 = connection refused
                 (SocketError <> ESysEHostUnreach) and // 113 = no route to host
                 // (SocketError <> ESysENoTTY) and // 25 = not a typewriter (inappropriate ioctl for device) // should never see this, we don't call ioctl here
                 (SocketError <> ESysENotConn) and // 107 = transport endpoint is not connected
-                (SocketError <> ESysEAgain) and // from above
-                (SocketError <> ESysEWouldBlock) and // from above
-                (SocketError <> ESysEIntr)) then // from above
+                (SocketError <> ESysEAgain) and // from above (means we overflowed FMaxBufferSize)
+                (SocketError <> ESysEWouldBlock) and // from above (means we overflowed FMaxBufferSize)
+                (SocketError <> ESysEIntr)) then // from above (means we overflowed FMaxBufferSize)
             begin
                {$IFDEF VERBOSE_NETWORK} Writeln('Raising exception for socket error (number ', SocketError, ') while writing: ', StrError(SocketError)); {$ENDIF}
-               raise ESocketError.Create(SocketError);
+               raise ESocketError.Create(SocketError); // this is only done in debug mode
             end;
             {$IFDEF VERBOSE_NETWORK} Writeln('Disconnecting in response to the following socket error (number ', SocketError, ') while writing: ', StrError(SocketError)); {$ENDIF}
             {$ENDIF}
+            ReportConnectionError(SocketError);
             Disconnect();
-            // XXX somehow the server crashes in heaptrc if you get here
          end;
       end
       else

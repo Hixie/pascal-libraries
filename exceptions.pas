@@ -30,7 +30,6 @@ type
 
 function XXX: Variant; unimplemented;
 
-// XXX why do we have this here and in debug.pas?
 {$IFDEF DEBUG} function GetStackTrace(): AnsiString; {$ENDIF}
 
 implementation
