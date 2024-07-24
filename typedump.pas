@@ -359,7 +359,7 @@ begin
    Assert(SetInfo^.Kind = tkSet, 'SetToString is only valid with sets');
    EnumInfo := GetTypeData(SetInfo)^.CompType;
    ExpandedValues := SetToArray(SetInfo, @Values);
-   SetLength(Result, Length(ExpandedValues));
+   SetLength(Result, Length(ExpandedValues)); // {BOGUS Warning: Function result variable of a managed type does not seem to be initialized}
    if (Length(Result) > 0) then
    begin
       for Index := Low(ExpandedValues) to High(ExpandedValues) do // $R-

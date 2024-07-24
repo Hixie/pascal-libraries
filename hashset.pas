@@ -42,6 +42,7 @@ type
         // Utils.Equals() can return true even for values that are not pointer-equal, e.g. strings.
       procedure Remove(const Value: T);
       function Has(const Value: T): Boolean;
+      property Count: THashTableSizeInt read FCount;
     public
      type
        TEnumerator = class

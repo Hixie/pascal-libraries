@@ -12,16 +12,19 @@ type
    private
       FInput: RawByteString;
       FPosition: Cardinal; // 1-based
+      procedure CheckCanRead(ComponentSize: Cardinal); inline;
    public
       constructor Create(const Input: RawByteString);
       function ReadBoolean(): Boolean;
       function ReadCardinal(): Cardinal;
+      function ReadPtrUInt(): PtrUInt;
       function ReadDouble(): Double;
       function ReadString(): RawByteString;
       function ReadBytes(): TBytes;
       procedure ReadRawBytes(Length: Cardinal; out Output);
       procedure Reset(); // returns position to start
       procedure Truncate(Remainder: Cardinal); // truncates the input so that only Remainder bytes remain
+      property RawInput: RawByteString read FInput;
    end;
 
    TBinaryStreamWriter = class
@@ -47,15 +50,20 @@ type
       destructor Destroy(); override;
       procedure WriteBoolean(const Value: Boolean);
       procedure WriteCardinal(const Value: Cardinal);
+      procedure WritePtrUInt(const Value: PtrUInt);
       procedure WriteDouble(const Value: Double);
       procedure WriteString(const Value: RawByteString);
       procedure WriteBytes(const Value: TBytes);
       procedure WriteRawBytes(Buffer: Pointer; Length: Cardinal);
       function Serialize(IncludeLengthPrefix: Boolean): RawByteString;
       procedure Consume(Count: Cardinal); // skips the leading Count bytes in future Serialize attempts
+      procedure Clear(); // consume everything
       property BufferLength: Cardinal read FLength;
    end;
 
+   EBinaryStreamError = class(Exception)
+   end;
+   
 implementation
 
 constructor TBinaryStreamReader.Create(const Input: RawByteString);
@@ -65,10 +73,17 @@ begin
    FPosition := 1;
 end;
 
+procedure TBinaryStreamReader.CheckCanRead(ComponentSize: Cardinal);
+begin
+   if (FPosition + ComponentSize - 1 > Length(FInput)) then
+      raise EBinaryStreamError.CreateFmt('Read past end of stream (position=%d, size=%d, length=%d).', [FPosition, ComponentSize, Length(FInput)]);
+end;
+
 function TBinaryStreamReader.ReadBoolean(): Boolean;
 type
    PByteBool = ^ByteBool;
 begin
+   CheckCanRead(SizeOf(ByteBool));
    Result := PByteBool(Pointer(@FInput[FPosition]))^;
    Inc(FPosition, 1);
 end;
@@ -77,14 +92,25 @@ function TBinaryStreamReader.ReadCardinal(): Cardinal;
 type
    PCardinal = ^Cardinal;
 begin
+   CheckCanRead(SizeOf(Cardinal));
    Result := PCardinal(Pointer(@FInput[FPosition]))^;
    Inc(FPosition, SizeOf(Cardinal));
+end;
+
+function TBinaryStreamReader.ReadPtrUInt(): PtrUInt;
+type
+   PPtrUInt = ^PtrUInt;
+begin
+   CheckCanRead(SizeOf(PtrUInt));
+   Result := PPtrUInt(Pointer(@FInput[FPosition]))^;
+   Inc(FPosition, SizeOf(PtrUInt));
 end;
 
 function TBinaryStreamReader.ReadDouble(): Double;
 type
    PDouble = ^Double;
 begin
+   CheckCanRead(SizeOf(Double));
    Result := PDouble(Pointer(@FInput[FPosition]))^;
    Inc(FPosition, SizeOf(Double));
 end;
@@ -94,7 +120,8 @@ var
    BufferLength: Cardinal;
 begin
    BufferLength := ReadCardinal();
-   SetLength(Result, BufferLength);
+   CheckCanRead(SizeOf(BufferLength));
+   SetLength(Result, BufferLength); {BOGUS Hint: Function result variable of a managed type does not seem to be initialized}
    if (BufferLength > 0) then
    begin
       Move(FInput[FPosition], Result[1], BufferLength);
@@ -107,7 +134,8 @@ var
    BufferLength: Cardinal;
 begin
    BufferLength := ReadCardinal();
-   SetLength(Result, BufferLength);
+   CheckCanRead(SizeOf(BufferLength));
+   SetLength(Result, BufferLength); {BOGUS Warning: Function result variable of a managed type does not seem to be initialized}
    if (BufferLength > 0) then
    begin
       Move(FInput[FPosition], Result[0], BufferLength);
@@ -117,9 +145,10 @@ end;
 
 procedure TBinaryStreamReader.ReadRawBytes(Length: Cardinal; out Output);
 begin
+   CheckCanRead(SizeOf(Length));
    if (Length > 0) then
    begin
-      Move(FInput[FPosition], Output, Length);
+      Move(FInput[FPosition], Output, Length); {BOGUS Hint: Variable "Output" does not seem to be initialized}
       Inc(FPosition, Length);
    end;
 end;
@@ -141,7 +170,6 @@ begin
    Next := nil;
    Length := 0;
 end;
-
 
 destructor TBinaryStreamWriter.Destroy();
 var
@@ -199,6 +227,13 @@ type
    PCardinal = ^Cardinal;
 begin
    PCardinal(GetDestination(SizeOf(Cardinal)))^ := Value;
+end;
+
+procedure TBinaryStreamWriter.WritePtrUInt(const Value: PtrUInt);
+type
+   PPtrUInt = ^PtrUInt;
+begin
+   PPtrUInt(GetDestination(SizeOf(PtrUInt)))^ := Value;
 end;
 
 procedure TBinaryStreamWriter.WriteDouble(const Value: Double);
@@ -267,10 +302,11 @@ begin
    begin
       Assert(Skip < Segment^.Length);
       Move(Segment^.Data[Skip], Buffer[Index], Segment^.Length - Skip);
-      Inc(Index, Segment^.Length);
+      Inc(Index, Segment^.Length - Skip);
       Segment := Segment^.Next;
       Skip := 0;
    end;
+   Assert(Index = Length(Buffer) + 1);
    Result := Buffer;
 end;
 
@@ -293,6 +329,22 @@ begin
       end;
       Dispose(Segment);
    end;
+end;
+
+procedure TBinaryStreamWriter.Clear();
+var
+   Segment: PSegment;
+begin
+   while (Assigned(FFirst)) do
+   begin
+      Segment := FFirst;
+      FFirst := FFirst^.Next;
+      Dispose(Segment);
+   end;
+   FLast := nil;
+   FPosition := 0;
+   FLength := 0;
+   FSkip := 0;
 end;
 
 end.

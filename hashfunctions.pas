@@ -9,6 +9,7 @@ type
 
 function Integer32Hash32(const Key: DWord): DWord; inline;
 function Integer64Hash32(const Key: QWord): DWord; inline;
+function LongIntHash32(const Key: LongInt): DWord; inline;
 function PtrUIntHash32(const Key: PtrUInt): DWord; inline;
 function PointerHash32(const Key: Pointer): DWord; inline;
 function ObjectHash32(const Key: TObject): DWord; inline;
@@ -63,6 +64,24 @@ begin
    {$POP}
 end;
 
+function LongIntHash32(const Key: LongInt): DWord;
+begin
+   Assert(SizeOf(LongInt) * 8 = 32);
+   Result := DWord(Key);
+   { Robert Jenkins 32bit Integer Hash - http://burtleburtle.net/bob/hash/integer.html }
+   {$PUSH}
+   {$OVERFLOWCHECKS OFF}
+   {$RANGECHECKS OFF}
+   {$HINTS OFF} // because all this intentionally overflows
+   Result := (Result  +  $7ed55d16)  +  (Result shl 12);
+   Result := (Result xor $c761c23c) xor (Result shr 19);
+   Result := (Result  +  $165667b1)  +  (Result shl  5);
+   Result := (Result  +  $d3a2646c) xor (Result shl  9);
+   Result := (Result  +  $fd7046c5)  +  (Result shl  3);
+   Result := (Result xor $b55a4f09) xor (Result shr 16);
+   {$POP}
+end;
+
 function PtrUIntHash32(const Key: PtrUInt): DWord;
 begin
    {$PUSH}
@@ -84,7 +103,7 @@ begin
    {$HINTS ON}
 end;
 
-function ObjectHash32(const Key: TOBject): DWord;
+function ObjectHash32(const Key: TObject): DWord;
 begin
    Result := PtrUIntHash32(PtrUInt(Key));
 end;

@@ -25,6 +25,7 @@ type
 
    TObjectUtils = specialize DefaultUnorderedUtils <TObject>;
    CardinalUtils = specialize DefaultUtils <Cardinal>;
+   IntegerUtils = specialize DefaultUtils <Integer>;
    PtrUIntUtils = specialize DefaultUtils <PtrUInt>;
    RawByteStringUtils = specialize DefaultUtils <RawByteString>;
    // for UTF8StringUtils, see stringutils.pas

@@ -41,8 +41,8 @@ type
       procedure WriteLength(const Length: Int64);
     public
       constructor Create(Listener: TListenerSocket);
-      procedure WriteFrame(const s: UTF8String); {$IFDEF DEBUG} virtual; {$ENDIF} overload;
-      procedure WriteFrame(const Buf; const Length: Cardinal); {$IFDEF DEBUG} virtual; {$ENDIF} overload;
+      procedure WriteFrame(const s: UTF8String); {$IFDEF DEBUG} virtual; {$ENDIF} overload; // UTF-8 frame
+      procedure WriteFrame(const Buf; const Length: Cardinal); {$IFDEF DEBUG} virtual; {$ENDIF} overload; // binary frame
       property Ready: Boolean read FCanWriteFrames;
     end;
 

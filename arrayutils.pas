@@ -10,6 +10,12 @@ procedure FisherYatesShuffle(var Buffer; const Count: Cardinal; const ElementSiz
 
 function Join(const Input: array of RawByteString; const Separator: RawByteString): RawByteString;
 
+type
+   TSearchEvaluationFunc = function (const I: Integer): Integer is nested;
+
+// binary searches between L and R and returns the lowest index for which SearchEvaluationFunc returns a positive value
+function BinarySearch(L, R: Integer; const SearchEvaluationFunc: TSearchEvaluationFunc): Integer;
+
 implementation
 
 procedure FisherYatesShuffle(var Buffer; const Count: Cardinal; const ElementSize: Cardinal);
@@ -56,5 +62,26 @@ begin
       end;  
    end;
 end;
-   
+
+function BinarySearch(L, R: Integer; const SearchEvaluationFunc: TSearchEvaluationFunc): Integer;
+var
+   Comp: Integer;
+begin
+   while (L < R) do
+   begin
+      Result := L + ((R - L) shr 1); // $R-
+      Comp := SearchEvaluationFunc(Result);
+      if (Comp = 0) then
+         exit;
+      if (Comp < 0) then
+      begin
+         L := Result + 1; // $R-
+      end
+      else
+      begin
+         R := Result;
+      end;
+   end;
+end;
+
 end.
