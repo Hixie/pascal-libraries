@@ -266,9 +266,17 @@ begin
         {$IFDEF WEBSOCKET_NETWORK} Writeln('Received close frame.'); {$ENDIF}
         Disconnect();
      end;
-    ftPing, ftPong:
+    ftPing:
      begin
-        // we don't support ping frames, just ignore them
+        {$IFDEF WEBSOCKET_NETWORK} Writeln('Received ping frame.'); {$ENDIF}
+        Write([$8A, $00]); // pong, no data
+        // We don't echo the application data (this violates the spec),
+        // because we don't want to send attacker-controlled bytes.
+     end;
+    ftPong:
+     begin
+        {$IFDEF WEBSOCKET_NETWORK} Writeln('Received pong frame.'); {$ENDIF}
+        // nothing to do for pong frames
      end;
    end;
 end;
