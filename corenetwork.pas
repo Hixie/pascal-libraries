@@ -448,6 +448,7 @@ begin
          end
          else
          begin
+            {$IFDEF VERBOSE_NETWORK} Writeln('Handling network socket error ', SocketError, ' (', StrError(SocketError), '); PendingWritesLength=', FPendingWritesLength, ', Sent=', Sent, ', MaxBufferSize=', FMaxBufferSize); {$ENDIF}
             if (NeedCopy) then
             begin
                // don't bother getting a copy of the buffer
@@ -470,10 +471,12 @@ begin
                 (SocketError <> ESysEWouldBlock) and // from above (means we overflowed FMaxBufferSize)
                 (SocketError <> ESysEIntr)) then // from above (means we overflowed FMaxBufferSize)
             begin
-               {$IFDEF VERBOSE_NETWORK} Writeln('Raising exception for socket error (number ', SocketError, ') while writing: ', StrError(SocketError)); {$ENDIF}
+               // If we get here, the error is a new one that we don't know about. In debug mode, throw an exception so that
+               // we notice the error and do something about it (probably just adding it to the list above).
+               {$IFDEF VERBOSE_NETWORK} Writeln('  Raising exception; this is a new error that we haven''t seen before.'); {$ENDIF}
                raise ESocketError.Create(SocketError); // this is only done in debug mode
             end;
-            {$IFDEF VERBOSE_NETWORK} Writeln('Disconnecting in response to the following socket error (number ', SocketError, ') while writing: ', StrError(SocketError)); {$ENDIF}
+            {$IFDEF VERBOSE_NETWORK} Writeln('  Closing connection.'); {$ENDIF}
             {$ENDIF}
             ReportConnectionError(SocketError);
             Disconnect();
