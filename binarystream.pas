@@ -18,6 +18,8 @@ type
       function ReadBoolean(): Boolean;
       function ReadCardinal(): Cardinal;
       function ReadPtrUInt(): PtrUInt;
+      function ReadInt32(): Int32;
+      function ReadInt64(): Int64;
       function ReadDouble(): Double;
       function ReadString(): RawByteString;
       function ReadBytes(): TBytes;
@@ -51,6 +53,8 @@ type
       procedure WriteBoolean(const Value: Boolean);
       procedure WriteCardinal(const Value: Cardinal);
       procedure WritePtrUInt(const Value: PtrUInt);
+      procedure WriteInt32(const Value: Int32);
+      procedure WriteInt64(const Value: Int64);
       procedure WriteDouble(const Value: Double);
       procedure WriteString(const Value: RawByteString);
       procedure WriteBytes(const Value: TBytes);
@@ -104,6 +108,24 @@ begin
    CheckCanRead(SizeOf(PtrUInt));
    Result := PPtrUInt(Pointer(@FInput[FPosition]))^;
    Inc(FPosition, SizeOf(PtrUInt));
+end;
+
+function TBinaryStreamReader.ReadInt32(): Int32;
+type
+   PInt32 = ^Int32;
+begin
+   CheckCanRead(SizeOf(Int32));
+   Result := PInt32(Pointer(@FInput[FPosition]))^;
+   Inc(FPosition, SizeOf(Int32));
+end;
+
+function TBinaryStreamReader.ReadInt64(): Int64;
+type
+   PInt64 = ^Int64;
+begin
+   CheckCanRead(SizeOf(Int64));
+   Result := PInt64(Pointer(@FInput[FPosition]))^;
+   Inc(FPosition, SizeOf(Int64));
 end;
 
 function TBinaryStreamReader.ReadDouble(): Double;
@@ -234,6 +256,20 @@ type
    PPtrUInt = ^PtrUInt;
 begin
    PPtrUInt(GetDestination(SizeOf(PtrUInt)))^ := Value;
+end;
+
+procedure TBinaryStreamWriter.WriteInt32(const Value: Int32);
+type
+   PInt32 = ^Int32;
+begin
+   PInt32(GetDestination(SizeOf(Int32)))^ := Value;
+end;
+
+procedure TBinaryStreamWriter.WriteInt64(const Value: Int64);
+type
+   PInt64 = ^Int64;
+begin
+   PInt64(GetDestination(SizeOf(Int64)))^ := Value;
 end;
 
 procedure TBinaryStreamWriter.WriteDouble(const Value: Double);
