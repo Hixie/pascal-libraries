@@ -35,8 +35,8 @@ type
       procedure Reset();
       procedure Add(const Value: T);
         // Add() should only be called for values that are not in the table (as checked by Has()).
-      procedure Intern(const Value: T);
-      function Intern(const Value: T; out Hash: DWord): T;
+      function Intern(const Value: T): T;
+      function Intern(const Value: T; out Hash: DWord): T; inline;
         // Intern() first checks if the value is already in the table, and if it is, it returns that previous value;
         // otherwise, it adds it to the table. The returned value (and hash code) can be useful for types where
         // Utils.Equals() can return true even for values that are not pointer-equal, e.g. strings.
@@ -174,28 +174,12 @@ begin
    InternalAdd(FTable, Value);
 end;
 
-procedure THashSet.Intern(const Value: T);
+function THashSet.Intern(const Value: T): T;
 var
    Entry: PHashSetEntry;
 begin
    { This is safe because Length(table) is positive and 'mod' will only ever return a smaller value }
    Entry := FTable[FHashFunction(Value) mod Length(FTable)];
-   while (Assigned(Entry)) do
-   begin
-      if (Utils.Equals(Entry^.Value, Value)) then
-         exit;
-      Entry := Entry^.Next;
-   end;
-   Add(Value);
-end;
-
-function THashSet.Intern(const Value: T; out Hash: DWord): T;
-var
-   Entry: PHashSetEntry;
-begin
-   Hash := FHashFunction(Value);
-   { This is safe because Length(table) is positive and 'mod' will only ever return a smaller value }
-   Entry := FTable[Hash mod Length(FTable)];
    while (Assigned(Entry)) do
    begin
       if (Utils.Equals(Entry^.Value, Value)) then
@@ -207,6 +191,12 @@ begin
    end;
    Add(Value);
    Result := Value;
+end;
+
+function THashSet.Intern(const Value: T; out Hash: DWord): T;
+begin
+   Hash := FHashFunction(Value);
+   Result := Intern(Value);
 end;
 
 procedure THashSet.Remove(const Value: T);
