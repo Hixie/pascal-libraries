@@ -27,7 +27,11 @@ implementation
 constructor TRandomNumberGenerator.Create(ASeed: UInt32);
 begin
    inherited Create();
+   {$PUSH}
+   {$OVERFLOWCHECKS-}
+   {$RANGECHECKS-}
    FIncrement := (ASeed << 1) + 1; // must be an odd number // $R- (we might drop the top bit)
+   {$POP}
    FState := FIncrement;
 end;
    
