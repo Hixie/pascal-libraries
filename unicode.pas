@@ -25,6 +25,14 @@ type
 type
    TUnicodeCodepointArray = array of TUnicodeCodepoint;
 
+type
+   TU = record end;
+
+const
+   U: TU = ();
+
+operator + (const U: TU; const Value: TUnicodeCodepointRange): TUnicodeCodepoint; inline;
+
 implementation
 
 uses exceptions, sysutils {$IFOPT C+}, utf8 {$ENDIF};
@@ -44,6 +52,11 @@ end;
 operator = (const Op1, Op2: TUnicodeCodepoint): Boolean;
 begin
    Result := Op1.Value = Op2.Value;
+end;
+
+operator + (const U: TU; const Value: TUnicodeCodepointRange): TUnicodeCodepoint;
+begin
+   Result.FValue := Value;
 end;
 
 {$IFOPT C+}

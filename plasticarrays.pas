@@ -44,11 +44,9 @@ type
       TCompareFunc = function (const A, B: T): Integer is nested;
       procedure Sort(const CompareFunc: TCompareFunc);
       procedure Sort();
+      procedure SortSubrange(L, R: Integer; const CompareFunc: TCompareFunc);
+      procedure SortSubrange(L, R: Integer);
       procedure Shuffle();
-    strict private
-      // these aren't nested procs just because generics can't have nested procs
-      procedure QuickSort(L, R: Integer; const CompareFunc: TCompareFunc);
-      procedure QuickSort(L, R: Integer);
     public
      type
        TEnumerator = class
@@ -226,11 +224,12 @@ begin
    end;
 end;
 
-procedure PlasticArray.QuickSort(L, R: Integer; const CompareFunc: TCompareFunc);
+procedure PlasticArray.SortSubrange(L, R: Integer; const CompareFunc: TCompareFunc);
 var
    I, J : Integer;
    P, Q : T;
 begin
+   Assert(L < R);
    // based on QuickSort in rtl/objpas/classes/lists.inc
    repeat
       I := L;
@@ -251,7 +250,7 @@ begin
          end;
       until I > J;
       if (L < J) then
-         QuickSort(L, J, CompareFunc);
+         SortSubrange(L, J, CompareFunc);
       L := I;
    until I >= R;
 end;
@@ -260,14 +259,15 @@ procedure PlasticArray.Sort(const CompareFunc: TCompareFunc);
 begin
    Assert(FFilledLength < High(Integer));
    if (FFilledLength > 1) then
-      QuickSort(Low(FArray), FFilledLength-1, CompareFunc); // $R-
+      SortSubrange(Low(FArray), FFilledLength-1, CompareFunc); // $R-
 end;
 
-procedure PlasticArray.QuickSort(L, R: Integer);
+procedure PlasticArray.SortSubrange(L, R: Integer);
 var
    I, J : Integer;
    P, Q : T;
 begin
+   Assert(L < R);
    // based on QuickSort in rtl/objpas/classes/lists.inc
    repeat
       I := L;
@@ -288,7 +288,7 @@ begin
          end;
       until I > J;
       if (L < J) then
-         QuickSort(L, J);
+         SortSubrange(L, J);
       L := I;
    until I >= R;
 end;
@@ -297,7 +297,7 @@ procedure PlasticArray.Sort();
 begin
    Assert(FFilledLength < High(Integer));
    if (FFilledLength > 1) then
-      QuickSort(Low(FArray), FFilledLength-1); // $R-
+      SortSubrange(Low(FArray), FFilledLength-1); // $R-
 end;
 
 procedure PlasticArray.Shuffle();

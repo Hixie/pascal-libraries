@@ -25,9 +25,11 @@ type
 
    TObjectUtils = specialize DefaultUnorderedUtils <TObject>;
    CardinalUtils = specialize DefaultUtils <Cardinal>;
+   LongIntUtils = specialize DefaultUtils <LongInt>;
    IntegerUtils = specialize DefaultUtils <Integer>;
    PointerUtils = specialize DefaultUtils <Pointer>;
    PtrUIntUtils = specialize DefaultUtils <PtrUInt>;
+   DoubleUtils = specialize DefaultUtils <Double>;
    RawByteStringUtils = specialize DefaultUtils <RawByteString>;
    // for UTF8StringUtils, see stringutils.pas
 

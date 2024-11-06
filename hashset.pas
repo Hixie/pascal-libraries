@@ -29,6 +29,9 @@ type
       procedure Resize(const NewSize: THashSetSizeInt);
       procedure PrepareForSize(PredictedCount: THashSetSizeInt);
       procedure InternalAdd(var Table: array of PHashSetEntry; const Value: T);
+    strict private
+      function GetIsEmpty(): Boolean; inline;
+      function GetIsNotEmpty(): Boolean; inline;
     public
       constructor Create(const AHashFunction: THashFunction; const PredictedCount: THashSetSizeInt = 8);
       destructor Destroy(); override;
@@ -43,6 +46,8 @@ type
       procedure Remove(const Value: T);
       function Has(const Value: T): Boolean;
       property Count: THashTableSizeInt read FCount;
+      property IsEmpty: Boolean read GetIsEmpty;
+      property IsNotEmpty: Boolean read GetIsNotEmpty;
     public
      type
        TEnumerator = class
@@ -276,6 +281,16 @@ end;
 function THashSet.GetEnumerator(): TEnumerator;
 begin
    Result := TEnumerator.Create(Self);
+end;
+
+function THashSet.GetIsEmpty(): Boolean;
+begin
+   Result := Count = 0;
+end;
+
+function THashSet.GetIsNotEmpty(): Boolean;
+begin
+   Result := Count > 0;
 end;
 
 end.
