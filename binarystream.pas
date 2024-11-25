@@ -67,6 +67,8 @@ type
 
    EBinaryStreamError = class(Exception)
    end;
+
+// TODO: build a version of this that uses the same API for reading and writing so that you can have just one codepath
    
 implementation
 
