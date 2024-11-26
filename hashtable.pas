@@ -251,7 +251,7 @@ begin
          LastEntry^ := Entry^.Next;
          Dispose(Entry);
          Dec(FCount);
-         Exit;
+         exit;
       end;
       LastEntry := @Entry^.Next;
       Entry := Entry^.Next;
@@ -269,7 +269,7 @@ begin
       if (Utils.Equals(Entry^.Key, Key)) then
       begin
          Result := Entry^.Value;
-         Exit;
+         exit;
       end;
       Entry := Entry^.Next;
    end;
@@ -287,7 +287,7 @@ begin
       if (Utils.Equals(Entry^.Key, Key)) then
       begin
          Result := True;
-         Exit;
+         exit;
       end;
       Entry := Entry^.Next;
    end;
@@ -305,7 +305,7 @@ begin
       if (Utils.Equals(Entry^.Key, Key)) then
       begin
          Entry^.Value := Value;
-         Exit;
+         exit;
       end;
       Entry := Entry^.Next;
    end;

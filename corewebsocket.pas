@@ -78,7 +78,7 @@ begin
           else
              FState := wsError;
              Result := False;
-             Exit;
+             exit;
          end;
         wsFieldNameStart:
          case c of
@@ -102,7 +102,7 @@ begin
           else
              FState := wsError;
              Result := False;
-             Exit;
+             exit;
          end;
         wsFieldValue:
          case c of
@@ -116,7 +116,7 @@ begin
           else
              FState := wsError;
              Result := False;
-             Exit;
+             exit;
          end;
         wsFrameByte1:
          begin
@@ -154,7 +154,7 @@ begin
                begin
                   FState := wsError;
                   Result := False;
-                  Exit;
+                  exit;
                end
                else
                begin

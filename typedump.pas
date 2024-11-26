@@ -130,7 +130,7 @@ begin
    if (not Assigned(Root)) then
    begin
       Result := '<nil>' + #10;
-      Exit;
+      exit;
    end;
    if (Root^.Name <> '') then
       Result := 'Type ' + Root^.Name + ' = ' + GetTypeKindName(Root^.Kind) + ':' + #10

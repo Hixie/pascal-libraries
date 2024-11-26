@@ -93,7 +93,7 @@ begin
       begin
          Result := '';
          Close();
-         Exit;
+         exit;
       end;
    until (FInput[FPosition] = Terminal);
    Result := Copy(FInput, Start, FPosition - Start);

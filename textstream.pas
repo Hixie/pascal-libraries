@@ -235,7 +235,7 @@ procedure TTextStream.EnsureTokenReady();
    
 begin
    if (FTokenKind <> tkNone) then
-      Exit;
+      exit;
    Assert(FTokenSource = '');
    while (IsWhitespace(CurrentCharacter)) do
       AdvanceCharacter();

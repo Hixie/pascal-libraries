@@ -95,43 +95,43 @@ begin
    begin
       C := Value[Index];
       case Ord(C) of
-         $80..$BF: Exit; // unexpected continuation byte
-         $C0, $C1: Exit; // forcibly an overlong sequence
-         $C2..$DF: if (not ConsumeContinuationByte()) then Exit; // two-byte sequence
+         $80..$BF: exit; // unexpected continuation byte
+         $C0, $C1: exit; // forcibly an overlong sequence
+         $C2..$DF: if (not ConsumeContinuationByte()) then exit; // two-byte sequence
          $E0: // three-byte sequence with possible overlong sequence
            begin
-              if (not (ConsumeContinuationByte() and ConsumeContinuationByte())) then Exit; // short
+              if (not (ConsumeContinuationByte() and ConsumeContinuationByte())) then exit; // short
               Codepoint := ((Ord(Value[Index-1])-$80) shl 6) + (Ord(Value[Index])-$80); // $R-
               if (Codepoint < $0800) then
-                 Exit; // overlong
+                 exit; // overlong
            end;
-         $E1..$EC: if (not (ConsumeContinuationByte() and ConsumeContinuationByte())) then Exit; // three-byte sequence
+         $E1..$EC: if (not (ConsumeContinuationByte() and ConsumeContinuationByte())) then exit; // three-byte sequence
          $ED: // three-byte sequence with possible surrogates
            begin
-              if (not (ConsumeContinuationByte() and ConsumeContinuationByte())) then Exit; // short
+              if (not (ConsumeContinuationByte() and ConsumeContinuationByte())) then exit; // short
               Codepoint := $D000 + ((Ord(Value[Index-1])-$80) shl 6) + (Ord(Value[Index])-$80); // $R-
               Assert(Codepoint < $E000);
               if (Codepoint >= $D800) then
-                 Exit; // surrogate
+                 exit; // surrogate
            end;
-         $EE..$EF: if (not (ConsumeContinuationByte() and ConsumeContinuationByte())) then Exit; // three-byte sequence
+         $EE..$EF: if (not (ConsumeContinuationByte() and ConsumeContinuationByte())) then exit; // three-byte sequence
          $F0: // four-byte sequence with possible overlong sequence
            begin
-              if (not (ConsumeContinuationByte() and ConsumeContinuationByte() and ConsumeContinuationByte())) then Exit; // short
+              if (not (ConsumeContinuationByte() and ConsumeContinuationByte() and ConsumeContinuationByte())) then exit; // short
               Codepoint := ((Ord(Value[Index-2])-$80) shl 12) + ((Ord(Value[Index-1])-$80) shl 6) + (Ord(Value[Index])-$80); // $R-
               if (Codepoint < $10000) then
-                 Exit; // overlong
+                 exit; // overlong
            end;
-         $F1..$F3: if (not (ConsumeContinuationByte() and ConsumeContinuationByte() and ConsumeContinuationByte())) then Exit; // four-byte sequence
+         $F1..$F3: if (not (ConsumeContinuationByte() and ConsumeContinuationByte() and ConsumeContinuationByte())) then exit; // four-byte sequence
          $F4: // four-byte sequence with possible too-high codepoint
            begin
-              if (not (ConsumeContinuationByte() and ConsumeContinuationByte() and ConsumeContinuationByte())) then Exit; // short
+              if (not (ConsumeContinuationByte() and ConsumeContinuationByte() and ConsumeContinuationByte())) then exit; // short
               Codepoint := $100000 + ((Ord(Value[Index-2])-$80) shl 12) + ((Ord(Value[Index-1])-$80) shl 6) + (Ord(Value[Index])-$80); // $R-
               if (Codepoint > $10FFFF) then
-                 Exit; // overlong
+                 exit; // overlong
            end;
-         $F5..$FD: Exit; // forcibly an invalid Unicode character
-         $FE, $FF: Exit; // non-UTF-8 bytes
+         $F5..$FD: exit; // forcibly an invalid Unicode character
+         $FE, $FF: exit; // non-UTF-8 bytes
       end;
       Inc(Index);
    end;
@@ -450,14 +450,14 @@ begin
          begin
             Result.Length := 1;
             Result.Byte1 := Byte(Value.Value);
-            Exit;
+            exit;
          end;
       $000080 .. $0007FF:
          begin
             Result.Length := 2;
             Result.Byte1 := Byte(%11000000 or (Value.Value shr 6));
             Result.Byte2 := Byte(%10000000 or (Value.Value and %00000111111));
-            Exit;
+            exit;
          end;
       $000800 .. $00D7FF,
       $00E000 .. $00FFFF:
@@ -466,7 +466,7 @@ begin
             Result.Byte1 := Byte(%11100000 or (Value.Value shr 12));
             Result.Byte2 := Byte(%10000000 or (Value.Value and %0000111111000000) shr 6);
             Result.Byte3 := Byte(%10000000 or (Value.Value and %0000000000111111));
-            Exit;
+            exit;
          end;
       $010000 .. $10FFFF:
          begin
@@ -475,7 +475,7 @@ begin
             Result.Byte2 := Byte(%10000000 or (Value.Value and %0000111111000000000000) shr 12);
             Result.Byte3 := Byte(%10000000 or (Value.Value and %0000000000111111000000) shr 6);
             Result.Byte4 := Byte(%10000000 or (Value.Value and %0000000000000000111111));
-            Exit;
+            exit;
          end;
       else
          ; // see range checks below

@@ -258,7 +258,7 @@ begin
    if (IOResultValue = 2) then
    begin
       Result := nil;
-      Exit;
+      exit;
    end;
    if (IOResultValue <> 0) then
       RunError(IOResultValue);

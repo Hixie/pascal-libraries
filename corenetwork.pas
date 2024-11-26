@@ -374,7 +374,7 @@ begin
    if (not FConnected) then
    begin
       {$IFDEF VERBOSE_NETWORK} Writeln('Writing to socket ', FSocketNumber, ' when disconnected; ignored.'); {$ENDIF}
-      Exit; // Don't bother doing any work if we're not going to send it anyway
+      exit; // Don't bother doing any work if we're not going to send it anyway
    end;
    if (Len > 0) then
    begin

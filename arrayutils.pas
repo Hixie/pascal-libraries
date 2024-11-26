@@ -58,7 +58,7 @@ var
    Temp: Pointer;
 begin
    if (Count < 2) then
-      Exit;
+      exit;
    GetMem(Temp, ElementSize);
    for Index := Count-1 downto 1 do // $R-
    begin
