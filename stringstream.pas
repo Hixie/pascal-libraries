@@ -18,6 +18,7 @@ type
       procedure Close();
     public
       constructor Create(const Input: UTF8String);
+      function ReadLongint(): Longint;
       function ReadCardinal(): Cardinal; // only supports values up to High(Longint)
       function ReadDouble(): Double;
       function ReadString(): UTF8String;
@@ -36,6 +37,7 @@ type
       {$IFOPT C+} function GetDebugStarted(): Boolean; {$ENDIF}
     public
       constructor Create();
+      procedure WriteLongint(const Value: Longint);
       procedure WriteCardinal(const Value: Cardinal);
       procedure WriteDouble(const Value: Double);
       procedure WriteString(const Value: UTF8String);
@@ -107,11 +109,27 @@ end;
 
 function TStringStreamReader.ReadCardinal(): Cardinal;
 var
-   Value: Integer;
+   Value: Int64;
 begin
-   Value := StrToIntDef(ReadUntilNull(), 0);
-   if (Value < 0) then
+   Value := StrToInt64Def(ReadUntilNull(), Low(Int64));
+   if ((Value < Low(Cardinal)) or (Value > High(Cardinal))) then
+   begin
       Value := 0;
+      Close();
+   end;
+   Result := Value; // $R-
+end;
+
+function TStringStreamReader.ReadLongint(): Longint;
+var
+   Value: Int64;
+begin
+   Value := StrToInt64Def(ReadUntilNull(), Low(Int64));
+   if ((Value < Low(Longint)) or (Value > High(Longint))) then
+   begin
+      Value := 0;
+      Close();
+   end;
    Result := Value; // $R-
 end;
 
@@ -189,6 +207,11 @@ end;
 // TODO: this should not keep copying the string around
 
 procedure TStringStreamWriter.WriteCardinal(const Value: Cardinal);
+begin
+   FValue := FValue + IntToStr(Value) + #0;
+end;
+
+procedure TStringStreamWriter.WriteLongint(const Value: Longint);
 begin
    FValue := FValue + IntToStr(Value) + #0;
 end;
