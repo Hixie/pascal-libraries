@@ -24,6 +24,7 @@ type
       constructor Create(ASeed: UInt32);
       procedure Reset(NewState: UInt64);
       function GetUInt32(): UInt32; // uniform 0..High(UInt32)
+      function GetCardinal(Min, Max: Cardinal): Cardinal; // uniform Min..Max (inclusive, exclusive)
       function GetDouble(Min, Max: Double): Double; // uniform Min..Max (inclusive, exclusive)
       function GetBoolean(Probability: Double): Boolean; // P(True) = Probability (0..1)
       function Perturb(Value: Double; const Parameters: TPerturbationParameters): Double;
@@ -66,9 +67,14 @@ begin
    {$POP}
 end;
 
+function TRandomNumberGenerator.GetCardinal(Min, Max: Cardinal): Cardinal;
+begin
+   Result := Min + Trunc((Max - Min) * GetUInt32() / (High(UInt32) + 1)); // $R-
+end;
+
 function TRandomNumberGenerator.GetDouble(Min, Max: Double): Double;
 begin
-   Result := Min + (Max - Min) * GetUInt32() / High(UInt32);
+   Result := Min + (Max - Min) * GetUInt32() / (High(UInt32) + 1.0);
 end;
 
 function TRandomNumberGenerator.GetBoolean(Probability: Double): Boolean;
