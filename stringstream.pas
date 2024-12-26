@@ -52,7 +52,7 @@ type
 implementation
 
 uses
-   sysutils, exceptions, utf8;
+   sysutils, exceptions, utf8 {$IFOPT C+}, math {$ENDIF};
 
 const FloatFormat: TFormatSettings = (
    CurrencyFormat: 1;
@@ -218,6 +218,8 @@ end;
 
 procedure TStringStreamWriter.WriteDouble(const Value: Double);
 begin
+   Assert(not IsInfinite(Value));
+   Assert(not IsNaN(Value));
    FValue := FValue + FloatToStrF(Value, ffExponent, 15, 0, FloatFormat) + #0;
 end;
 
