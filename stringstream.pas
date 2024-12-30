@@ -52,7 +52,7 @@ type
 implementation
 
 uses
-   sysutils, exceptions, utf8 {$IFOPT C+}, math {$ENDIF};
+   sysutils, intutils, exceptions, utf8 {$IFOPT C+}, math {$ENDIF};
 
 const FloatFormat: TFormatSettings = (
    CurrencyFormat: 1;
@@ -111,7 +111,7 @@ function TStringStreamReader.ReadCardinal(): Cardinal;
 var
    Value: Int64;
 begin
-   Value := StrToInt64Def(ReadUntilNull(), Low(Int64));
+   Value := ParseInt64(ReadUntilNull(), Low(Int64));
    if ((Value < Low(Cardinal)) or (Value > High(Cardinal))) then
    begin
       Value := 0;
@@ -124,7 +124,7 @@ function TStringStreamReader.ReadLongint(): Longint;
 var
    Value: Int64;
 begin
-   Value := StrToInt64Def(ReadUntilNull(), Low(Int64));
+   Value := ParseInt64(ReadUntilNull(), Low(Int64));
    if ((Value < Low(Longint)) or (Value > High(Longint))) then
    begin
       Value := 0;
