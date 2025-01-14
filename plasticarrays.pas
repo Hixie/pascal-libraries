@@ -19,18 +19,20 @@ type
       function GetItem(const Index: Cardinal): T; inline;
       procedure SetItem(const Index: Cardinal; const Item: T); inline;
       function GetLast(): T; inline;
+      procedure SetLast(const Item: T); inline;
       procedure SetFilledLength(const NewFilledLength: Cardinal); inline;
     public
       // these calls are all O(1) except as noted
-      procedure Init(LikelyLength: Cardinal = 0); // call this if the PlasticArray is not pre-zeroed
+      procedure Init(LikelyLength: Cardinal = 0); inline; // call this if the PlasticArray is not pre-zeroed
         // (i.e. using this as a class member is fine; but if you use this in a procedure, call Init() first)
         // this is because the FFilledLength member is not managed by the compiler
+        // This call is up to O(LikelyLength), because it zeroes out the array.
       procedure Push(const Item: T); inline; // expensive if it requires the length to be increased
-      function Pop(): T; inline;
-      procedure Empty(); inline;
+      function Pop(): T; inline; // trivial, does not free memory for slot that is popped
+      procedure Empty(); inline; // trivial, does not free memory
       property Length: Cardinal read FFilledLength write SetFilledLength; // expensive if it requires the length to be increased
       property Items[Index: Cardinal]: T read GetItem write SetItem; default;
-      property Last: T read GetLast;
+      property Last: T read GetLast write SetLast;
     public
       // The following calls are relatively expensive for various reasons
       procedure Squeeze(); inline; // reduces memory usage to minimum required
@@ -39,6 +41,7 @@ type
       function Contains(const Value: T): Boolean; // linear search
       function Contains(const Value: T; out IndexResult: Cardinal): Boolean; // linear search; IndexResult is only valid if result is True
       procedure RemoveShiftLeftInsert(const RemoveIndex, InsertIndex: Cardinal; NewValue: T);
+      function Distill(): TArray; inline; // calls Squeeze(), extracts the array, then calls Init()
     public
      type
       TCompareFunc = function (const A, B: T): Integer is nested;
@@ -88,8 +91,7 @@ uses
 procedure PlasticArray.Init(LikelyLength: Cardinal = 0);
 begin
    FFilledLength := 0;
-   if (LikelyLength > 0) then
-      SetLength(FArray, LikelyLength);
+   SetLength(FArray, LikelyLength);
 end;
 
 function PlasticArray.GetItem(const Index: Cardinal): T;
@@ -108,6 +110,12 @@ function PlasticArray.GetLast(): T;
 begin
    Assert(FFilledLength > 0);
    Result := FArray[FFilledLength-1]; // $R-
+end;
+
+procedure PlasticArray.SetLast(const Item: T);
+begin
+   Assert(FFilledLength > 0);
+   FArray[FFilledLength-1] := Item;
 end;
 
 procedure PlasticArray.SetFilledLength(const NewFilledLength: Cardinal);
@@ -129,7 +137,8 @@ end;
 
 procedure PlasticArray.Squeeze();
 begin
-   SetLength(FArray, FFilledLength);
+   if (System.Length(FArray) <> FFilledLength) then
+      SetLength(FArray, FFilledLength);
 end;
 
 procedure PlasticArray.Empty();
@@ -222,6 +231,14 @@ begin
       Move(FArray[RemoveIndex+1], FArray[RemoveIndex], (InsertIndex-RemoveIndex)*SizeOf(T));
       FArray[InsertIndex] := NewValue;
    end;
+end;
+
+function PlasticArray.Distill(): TArray;
+begin
+   Squeeze();
+   Result := FArray;
+   Init();
+   Assert((not Assigned(Result)) or (Pointer(Result) <> Pointer(FArray)));
 end;
 
 procedure PlasticArray.SortSubrange(L, R: Integer; const CompareFunc: TCompareFunc);
