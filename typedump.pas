@@ -16,6 +16,7 @@ generic function ParseEnumValue<T>(const Identifier: RawByteString; out Value: T
 generic function ListValues<T>(): TIdentifiers;
 generic function SetToStrings<T>(Values: T): TIdentifiers;
 generic function SetToString<T>(Values: T): RawByteString;
+generic function EnumToString<T>(Value: T): RawByteString;
 
 implementation
 
@@ -372,6 +373,11 @@ end;
 generic function SetToString<T>(Values: T): RawByteString;
 begin
    Result := String.Join(', ', specialize SetToStrings<T>(Values));
+end;
+
+generic function EnumToString<T>(Value: T): RawByteString;
+begin
+   Str(Value, Result);
 end;
 
 
