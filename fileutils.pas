@@ -10,7 +10,7 @@ uses
 type
    TFileData = record
       Start: Pointer;
-      Length: size_t;
+      Length: size_t; // QWord, not Int64
       procedure Destroy();
    end;
 
@@ -61,7 +61,7 @@ begin
    Source := ReadFile(FileName);
    if (Source.Length > High(Integer)) then
       raise Exception.Create('text file too big');
-   SetLength(Result, Source.Length);
+   SetLength(Result, Source.Length); // {BOGUS Hint: Function result variable of a managed type does not seem to be initialized}
    Move(Source.Start^, Result[1], Source.Length); // $R-
    Source.Destroy();
 end;
