@@ -17,11 +17,12 @@ type
    private
       var
          FState: UInt64;
-         FIncrement: UInt64;
+         FIncrement: UInt64; // this is essentially the seed (63 bits of entropy, the lowest bit is always 1)
       const
          FMultiplier: UInt64 = 6364136223846793005; // magic constant widely used as LCG multiplier
+      function GetSeed(): UInt64;
    public
-      constructor Create(ASeed: UInt32);
+      constructor Create(ASeed: UInt64); // high bit of seed is dropped
       procedure Reset(NewState: UInt64);
       function GetUInt32(): UInt32; // uniform 0..High(UInt32)
       function GetCardinal(Min, Max: Cardinal): Cardinal; // uniform Min..Max (inclusive, exclusive)
@@ -29,6 +30,7 @@ type
       function GetBoolean(Probability: Double): Boolean; // P(True) = Probability (0..1)
       function Perturb(Value: Double; const Parameters: TPerturbationParameters): Double;
       property State: UInt64 read FState;
+      property Seed: UInt64 read GetSeed;
    end;
 
 const
@@ -41,17 +43,22 @@ const
    
 implementation
 
-constructor TRandomNumberGenerator.Create(ASeed: UInt32);
+constructor TRandomNumberGenerator.Create(ASeed: UInt64);
 begin
    inherited Create();
    {$PUSH}
    {$OVERFLOWCHECKS-}
    {$RANGECHECKS-}
-   FIncrement := (ASeed << 1) + 1; // must be an odd number // $R- (we might drop the top bit)
+   FIncrement := (ASeed << 1) + 1; // must be an odd number // $R- (we drop the high bit)
    {$POP}
    FState := FIncrement;
 end;
    
+function TRandomNumberGenerator.GetSeed(): UInt64;
+begin
+   Result := FIncrement >> 1;
+end;
+
 procedure TRandomNumberGenerator.Reset(NewState: UInt64);
 begin
    FState := NewState;
@@ -63,7 +70,7 @@ begin
    {$OVERFLOWCHECKS-}
    {$RANGECHECKS-}
    FState := FState * FMultiplier + FIncrement;
-   Result := RoRDWord((FState xor (FState >> 18)) >> 27, FState >> 59); // $R- // first arguments intentionally drops some high bits
+   Result := RoRDWord((FState xor (FState >> 18)) >> 27, FState >> 59); // $R- // first argument intentionally drops some high bits
    {$POP}
 end;
 
