@@ -31,6 +31,7 @@ type
 function XXX: Variant; unimplemented;
 
 {$IFDEF DEBUG} function GetStackTrace(): AnsiString; {$ENDIF}
+{$IFDEF DEBUG} procedure DumpRaiseList(); {$ENDIF}
 
 implementation
 
@@ -107,7 +108,7 @@ end;
 function XXX: Variant;
 begin
    //Assert(False, 'Not Implemented');
-   raise Exception.Create('Not Implemented') at get_caller_addr(get_frame), get_caller_frame(get_frame);  
+   raise Exception.Create('Not Implemented') at Get_Caller_Addr(Get_Frame), Get_Caller_Frame(Get_Frame);  
 end;
 {$WARNINGS ON}
 
@@ -162,6 +163,31 @@ begin
    end;
    // end of copy from http://wiki.freepascal.org/Logging_exceptions
    Result := Report;
+end;
+{$ENDIF}
+
+{$IFDEF DEBUG}
+procedure DumpRaiseList();
+var
+   Current: PExceptObject;
+   Index, Count: Cardinal;
+begin
+   Current := RaiseList;
+   Count := 1;
+   while Assigned(Current) do
+   begin
+      Writeln('#', Count, ': ', Current^.FObject.ClassName);
+      Writeln('    Addr: ', HexStr(Current^.Addr));
+      Writeln('    RefCount: ', Current^.RefCount);
+      Writeln('    FrameCount: ', Current^.FrameCount);
+      if (Current^.FrameCount > 0) then
+         for Index := 0 to Current^.FrameCount - 1 do // $R-
+         begin
+            Writeln('      ', HexStr((Current^.Frames + Index * SizeOf(CodePointer))^));
+         end;
+      Current := Current^.Next;
+      Inc(Count);
+   end;
 end;
 {$ENDIF}
 
