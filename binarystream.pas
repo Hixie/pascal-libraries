@@ -18,8 +18,10 @@ type
       function ReadBoolean(): Boolean;
       function ReadCardinal(): Cardinal;
       function ReadPtrUInt(): PtrUInt;
+      function ReadByte(): Byte;
       function ReadInt32(): Int32;
       function ReadInt64(): Int64;
+      function ReadUInt64(): UInt64;
       function ReadDouble(): Double;
       function ReadString(): RawByteString;
       function ReadBytes(): TBytes;
@@ -53,8 +55,10 @@ type
       procedure WriteBoolean(const Value: Boolean);
       procedure WriteCardinal(const Value: Cardinal);
       procedure WritePtrUInt(const Value: PtrUInt);
+      procedure WriteByte(const Value: Byte);
       procedure WriteInt32(const Value: Int32);
       procedure WriteInt64(const Value: Int64);
+      procedure WriteUInt64(const Value: UInt64);
       procedure WriteDouble(const Value: Double);
       procedure WriteString(const Value: RawByteString);
       procedure WriteBytes(const Value: TBytes);
@@ -112,6 +116,15 @@ begin
    Inc(FPosition, SizeOf(PtrUInt));
 end;
 
+function TBinaryStreamReader.ReadByte(): Byte;
+type
+   PByte = ^Byte;
+begin
+   CheckCanRead(SizeOf(Byte));
+   Result := PByte(Pointer(@FInput[FPosition]))^;
+   Inc(FPosition, SizeOf(Byte));
+end;
+
 function TBinaryStreamReader.ReadInt32(): Int32;
 type
    PInt32 = ^Int32;
@@ -128,6 +141,15 @@ begin
    CheckCanRead(SizeOf(Int64));
    Result := PInt64(Pointer(@FInput[FPosition]))^;
    Inc(FPosition, SizeOf(Int64));
+end;
+
+function TBinaryStreamReader.ReadUInt64(): UInt64;
+type
+   PUInt64 = ^UInt64;
+begin
+   CheckCanRead(SizeOf(UInt64));
+   Result := PUInt64(Pointer(@FInput[FPosition]))^;
+   Inc(FPosition, SizeOf(UInt64));
 end;
 
 function TBinaryStreamReader.ReadDouble(): Double;
@@ -260,6 +282,13 @@ begin
    PPtrUInt(GetDestination(SizeOf(PtrUInt)))^ := Value;
 end;
 
+procedure TBinaryStreamWriter.WriteByte(const Value: Byte);
+type
+   PByte = ^Byte;
+begin
+   PByte(GetDestination(SizeOf(Byte)))^ := Value;
+end;
+
 procedure TBinaryStreamWriter.WriteInt32(const Value: Int32);
 type
    PInt32 = ^Int32;
@@ -272,6 +301,13 @@ type
    PInt64 = ^Int64;
 begin
    PInt64(GetDestination(SizeOf(Int64)))^ := Value;
+end;
+
+procedure TBinaryStreamWriter.WriteUInt64(const Value: UInt64);
+type
+   PUInt64 = ^UInt64;
+begin
+   PUInt64(GetDestination(SizeOf(UInt64)))^ := Value;
 end;
 
 procedure TBinaryStreamWriter.WriteDouble(const Value: Double);
