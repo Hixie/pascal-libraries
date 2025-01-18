@@ -4,6 +4,7 @@ unit unixutils;
 
 interface
 
+// Consider sigint.pas if all you need is ^C handling.
 var
    Aborted: Boolean = False;
 

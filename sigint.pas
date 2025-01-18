@@ -6,6 +6,7 @@ interface
 
 uses sysutils, baseunix, exceptions;
 
+// Consider unixutils.pas if you need SIGPIPE handling also.
 var
    Aborted: Boolean = False;
 
