@@ -7,31 +7,30 @@ unit messageport;
 interface
 
 type
-   generic TMessagePort<T> = class sealed
+   generic TMessagePort<T> = class
    public
       type
          TMessagePortMessageCallback = procedure (Port: specialize TMessagePort<T>; Message: T) of object;
          TMessagePortDisconnectCallback = procedure (Port: specialize TMessagePort<T>) of object;
-   protected
+   strict private
       FOther: specialize TMessagePort<T>;
       FMessageCallback: TMessagePortMessageCallback;
       FDisconnectCallback: TMessagePortDisconnectCallback;
    public
-      procedure Send(Message: T);
+      class procedure CreateChannel(out A, B: specialize TMessagePort<T>); static;
       destructor Destroy(); override;
+      procedure Send(Message: T);
       property OnMessage: TMessagePortMessageCallback read FMessageCallback write FMessageCallback;
       property OnDisconnect: TMessagePortDisconnectCallback read FDisconnectCallback write FDisconnectCallback;
    end;
 
-generic procedure CreateChannel<T>(out A, B: specialize TMessagePort<T>);
-   
 implementation
 
 {$IFDEF TESTS}
 uses sysutils;
 {$ENDIF}
 
-generic procedure CreateChannel<T>(out A, B: specialize TMessagePort<T>);
+class procedure TMessagePort.CreateChannel(out A, B: specialize TMessagePort<T>);
 begin
    A := specialize TMessagePort<T>.Create();
    B := specialize TMessagePort<T>.Create();
@@ -109,7 +108,7 @@ var
    A, B: specialize TMessagePort<Integer>;
    X, Y: TMessagePortTest;
 initialization
-   specialize CreateChannel<Integer>(A, B);
+   specialize TMessagePort<Integer>.CreateChannel(A, B);
    X := TMessagePortTest.Create('X', A);
    Y := TMessagePortTest.Create('Y', B);
    X.Test();
