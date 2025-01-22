@@ -21,6 +21,7 @@ type
       function GetLast(): T; inline;
       procedure SetLast(const Item: T); inline;
       procedure SetFilledLength(const NewFilledLength: Cardinal); inline;
+      function GetIsEmpty(): Boolean; inline;
     public
       // these calls are all O(1) except as noted
       procedure Init(LikelyLength: Cardinal = 0); inline; // call this if the PlasticArray is not pre-zeroed
@@ -33,6 +34,7 @@ type
       property Length: Cardinal read FFilledLength write SetFilledLength; // expensive if it requires the length to be increased
       property Items[Index: Cardinal]: T read GetItem write SetItem; default;
       property Last: T read GetLast write SetLast;
+      property IsEmpty: Boolean read GetIsEmpty;
     public
       // The following calls are relatively expensive for various reasons
       procedure Squeeze(); inline; // reduces memory usage to minimum required
@@ -116,6 +118,11 @@ procedure PlasticArray.SetLast(const Item: T);
 begin
    Assert(FFilledLength > 0);
    FArray[FFilledLength-1] := Item;
+end;
+
+function PlasticArray.GetIsEmpty(): Boolean;
+begin
+   Result := FFilledLength = 0;
 end;
 
 procedure PlasticArray.SetFilledLength(const NewFilledLength: Cardinal);
