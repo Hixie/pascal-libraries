@@ -22,10 +22,11 @@ type
    TStableClock = class(TClock)
    private
       FParentClock: TClock;
-      FNow: TDateTime;
+      FNow, FMax: TDateTime;
    public
       constructor Create(AParentClock: TClock);
       procedure Unlatch();
+      procedure UnlatchUntil(Max: TDateTime);
       function Now(): TDateTime; override;
    end;
 
@@ -43,17 +44,29 @@ begin
    inherited Create();
    FParentClock := AParentClock;
    FNow := NaN;
+   FMax := NaN;
 end;
 
 procedure TStableClock.Unlatch();
 begin
    FNow := NaN;
+   FMax := NaN;
+end;
+
+procedure TStableClock.UnlatchUntil(Max: TDateTime);
+begin
+   FNow := NaN;
+   FMax := Max;
 end;
             
 function TStableClock.Now(): TDateTime;
 begin
    if (IsNaN(FNow)) then
+   begin
       FNow := FParentClock.Now();
+      if (not IsNaN(FMax) and (FNow > FMax)) then
+         FNow := FMax;
+   end;
    Result := FNow;
 end;
 
