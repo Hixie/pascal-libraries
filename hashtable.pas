@@ -43,6 +43,38 @@ uses
 
  *****************************************************************************************)
 
+{ The best case memory usage of a hash table on a 64 bit system is:
+
+    40 + 16 + 1.4 * Count * 8 + Count * (SizeOf(TKey) + SizeOf(TValue) + 8)
+
+  The 40 bytes is the InstanceSize of a THashTable.
+
+  The 16 bytes is the overhead of the dynamic array used for the table.
+
+  The 1.4 is the overhead of a fully-loaded hash table (with max load
+  factor 0.7).
+
+  The Count is the number of entries in the table.
+
+  The first 8 is the pointer size; there are 1.4 * Count pointers in
+  the hash table (those are the entries in the table).
+
+  The second 8 is the linked list pointer; there are Count linked list
+  entries, each of which has a key and a value in addition to the
+  linked list pointer. The expression above says "SizeOf(TKey)" and
+  "SizeOf(TValue)" but if these are less than 8 bytes then alignment
+  probably forces them to 8 bytes anyway.
+
+  So for a hash table with 14 items with keys and values each of 8
+  bytes, the hash table will take about 549 bytes. For 64 items, it
+  would take about 2.2KB.
+
+  (For contrast, a static array of 64 items of 8 bytes takes 512
+  bytes, and if stored on the stack, doesn't even need the 8 byte
+  pointer to the object!)
+
+}
+
 type
    generic THashTable <TKey, TValue, Utils> = class
     strict protected
@@ -70,6 +102,9 @@ type
       function GetKeyForEntry(const Entry: Pointer): TKey;
       function GetValueForEntry(const Entry: Pointer): TValue;
       procedure AdvanceEnumerator(var Current: Pointer; var Index: THashTableSizeInt);
+    strict private
+      function GetIsEmpty(): Boolean; inline;
+      function GetIsNotEmpty(): Boolean; inline;
     public
       constructor Create(const AHashFunction: THashFunction; const PredictedCount: THashTableSizeInt = 8);
       destructor Destroy(); override;
@@ -81,6 +116,8 @@ type
       property Items[Key: TKey]: TValue read Get write Update; default;
       {$IFDEF DEBUG} procedure Histogram(var F: Text); {$ENDIF}
       property Count: THashTableSizeInt read FCount;
+      property IsEmpty: Boolean read GetIsEmpty;
+      property IsNotEmpty: Boolean read GetIsNotEmpty;
     public
      type
        TKeyEnumerator = class
@@ -458,6 +495,16 @@ end;
 function THashTable.Values(): TValueEnumerator;
 begin
    Result := TValueEnumerator.Create(Self);
+end;
+
+function THashTable.GetIsEmpty(): Boolean;
+begin
+   Result := Count = 0;
+end;
+
+function THashTable.GetIsNotEmpty(): Boolean;
+begin
+   Result := Count > 0;
 end;
 
 end.
