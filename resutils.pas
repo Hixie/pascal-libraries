@@ -69,7 +69,7 @@ begin
    FreeResource(LoadedResourceHandle);
 end;
 
-{$IFDEF ENABLETESTS}
+{$IFDEF TESTS}
 {$IFOPT C+} {$ELSE} {$FATAL Can't run tests without assertion support} {$ENDIF}
 {$RESOURCE tests/resutils.rc}
 procedure TestRes();
@@ -89,7 +89,7 @@ end;
 {$ENDIF}
 
 initialization
-   {$IFDEF ENABLETESTS} TestRes(); {$ENDIF}
+   {$IFDEF TESTS} TestRes(); {$ENDIF}
 end.
 // if you need windres: sudo apt-get install mingw32-binutils
 // make sure you have a symlink to /usr/bin/*windres* in your path as "windres"
