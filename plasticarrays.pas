@@ -38,6 +38,7 @@ type
     public
       // The following calls are relatively expensive for various reasons
       procedure Squeeze(); inline; // reduces memory usage to minimum required
+      procedure InsertAt(const Index: Cardinal; const Value: T); // does a memory move (if Index < FFilledLength)
       procedure RemoveAt(const Index: Cardinal); // does a memory move
       procedure Remove(const Value: T); // does a linear search, then memory move
       function Contains(const Value: T): Boolean; // linear search
@@ -167,13 +168,26 @@ begin
    Result := FArray[FFilledLength];
 end;
 
+procedure PlasticArray.InsertAt(const Index: Cardinal; const Value: T);
+begin
+   if (Index = FFilledLength) then
+   begin
+      Push(Value);
+      exit;
+   end;
+   Assert(FFilledLength < High(Cardinal));
+   SetFilledLength(FFilledLength + 1); // $R-
+   Move(FArray[Index], FArray[Index+1], (FFilledLength-Index-1)*SizeOf(T));
+   FArray[Index] := Value;
+end;
+
 procedure PlasticArray.RemoveAt(const Index: Cardinal);
 begin
    Assert(FFilledLength > 0);
    Assert(Index < FFilledLength);
    Dec(FFilledLength);
    if (Index < FFilledLength) then
-      Move(FArray[Index+1], FArray[Index], (FFilledLength-Index+1)*SizeOf(T));
+      Move(FArray[Index+1], FArray[Index], (FFilledLength-Index)*SizeOf(T));
 end;
 
 procedure PlasticArray.Remove(const Value: T);
