@@ -65,7 +65,7 @@
   {$IEEEERRORS ON}
   {$S+} // stack checking
   // {$DEFINE EXTRA} // for memory heap problems; also need to add a copy of heaptrc.pp in this directory
-  {$DEFINE ENABLETESTS}
+  {$DEFINE TESTS}
   // disable things that make debugging a pain in the neck
   {$INLINE OFF}
   {$OPTIMIZATION OFF}
