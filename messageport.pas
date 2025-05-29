@@ -7,21 +7,36 @@ unit messageport;
 interface
 
 type
-   generic TMessagePort<T> = class
-   public
-      type
-         TMessagePortMessageCallback = procedure (Port: specialize TMessagePort<T>; Message: T) of object;
-         TMessagePortDisconnectCallback = procedure (Port: specialize TMessagePort<T>) of object;
+   generic TMessagePort<T> = class abstract
    strict private
       FOther: specialize TMessagePort<T>;
-      FMessageCallback: TMessagePortMessageCallback;
-      FDisconnectCallback: TMessagePortDisconnectCallback;
-   public
-      class procedure CreateChannel(out A, B: specialize TMessagePort<T>); static;
-      destructor Destroy(); override;
+      function IsConnected(): Boolean; inline;
+   protected
+      constructor Create(); virtual;
+      class procedure CreateChannel(out A, B);
+      property Other: specialize TMessagePort<T> read FOther;
       procedure Send(Message: T);
-      property OnMessage: TMessagePortMessageCallback read FMessageCallback write FMessageCallback;
-      property OnDisconnect: TMessagePortDisconnectCallback read FDisconnectCallback write FDisconnectCallback;
+      procedure HandleMessage(Message: T); virtual; abstract;
+      procedure Disconnect(); virtual;
+   public
+      destructor Destroy(); override;
+      property Connected: Boolean read IsConnected;
+   end;
+   
+   generic TCustomMessagePort<T> = class(specialize TMessagePort<T>)
+   public
+      type
+         TMessageCallback = procedure (Port: specialize TCustomMessagePort<T>; Message: T) of object;
+         TDisconnectCallback = procedure (Port: specialize TCustomMessagePort<T>) of object;
+   private
+      FOnMessage: TMessageCallback;
+      FOnDisconnect: TDisconnectCallback;
+   protected
+      procedure HandleMessage(Message: T); override;
+      procedure Disconnect(); override;
+   public
+      property OnMessage: TMessageCallback read FOnMessage write FOnMessage;
+      property OnDisconnect: TDisconnectCallback read FOnDisconnect write FOnDisconnect;
    end;
 
 implementation
@@ -30,30 +45,60 @@ implementation
 uses sysutils;
 {$ENDIF}
 
-class procedure TMessagePort.CreateChannel(out A, B: specialize TMessagePort<T>);
+constructor TMessagePort.Create();
 begin
-   A := specialize TMessagePort<T>.Create();
-   B := specialize TMessagePort<T>.Create();
-   A.FOther := B;
-   B.FOther := A;
+   inherited;
+end;
+
+class procedure TMessagePort.CreateChannel(out A, B);
+var
+   P1: specialize TMessagePort<T> absolute A;
+   P2: specialize TMessagePort<T> absolute B;
+begin
+   P1 := Create();
+   P2 := Create();
+   P1.FOther := P2;
+   P2.FOther := P1;
+end;
+
+function TMessagePort.IsConnected(): Boolean;
+begin
+   Result := Assigned(FOther);
 end;
 
 procedure TMessagePort.Send(Message: T);
 begin
    Assert(Assigned(FOther));
-   if (Assigned(FOther.FMessageCallback)) then
-      FOther.FMessageCallback(FOther, Message);
+   FOther.HandleMessage(Message);
+end;
+
+procedure TMessagePort.Disconnect();
+begin
+   FOther := nil;
 end;
 
 destructor TMessagePort.Destroy();
 begin
    if (Assigned(FOther)) then
    begin
-      FOther.FOther := nil;
-      if (Assigned(FOther.FDisconnectCallback)) then
-         FOther.FDisconnectCallback(FOther);
+      FOther.Disconnect();
+      FOther := nil;
    end;
    inherited;
+end;
+
+
+procedure TCustomMessagePort.HandleMessage(Message: T);
+begin
+   if (Assigned(FOnMessage)) then
+      FOnMessage(Self, Message);
+end;
+
+procedure TCustomMessagePort.Disconnect();
+begin
+   inherited;
+   if (Assigned(FOnDisconnect)) then
+      FOnDisconnect(Self);
 end;
 
 
@@ -64,15 +109,15 @@ var
 type
    TMessagePortTest = class
       FID: UTF8String;
-      FPort: specialize TMessagePort<Integer>;
-      constructor Create(AID: UTF8String; APort: specialize TMessagePort<Integer>);
+      FPort: specialize TCustomMessagePort<Integer>;
+      constructor Create(AID: UTF8String; APort: specialize TCustomMessagePort<Integer>);
       destructor Destroy(); override;
-      procedure HandleMessage(Port: specialize TMessagePort<Integer>; Message: Integer);
-      procedure HandleDisconnect(Port: specialize TMessagePort<Integer>);
+      procedure HandleMessage(Port: specialize TCustomMessagePort<Integer>; Message: Integer);
+      procedure HandleDisconnect(Port: specialize TCustomMessagePort<Integer>);
       procedure Test();
    end;
 
-constructor TMessagePortTest.Create(AID: UTF8String; APort: specialize TMessagePort<Integer>);
+constructor TMessagePortTest.Create(AID: UTF8String; APort: specialize TCustomMessagePort<Integer>);
 begin
    inherited Create();
    FID := AID;
@@ -87,12 +132,12 @@ begin
    inherited;
 end;
 
-procedure TMessagePortTest.HandleMessage(Port: specialize TMessagePort<Integer>; Message: Integer);
+procedure TMessagePortTest.HandleMessage(Port: specialize TCustomMessagePort<Integer>; Message: Integer);
 begin
    Log := Log + FID + ' RECEIVED ' + IntToStr(Message) + #$0A;
 end;
 
-procedure TMessagePortTest.HandleDisconnect(Port: specialize TMessagePort<Integer>);
+procedure TMessagePortTest.HandleDisconnect(Port: specialize TCustomMessagePort<Integer>);
 begin
    Log := Log + FID + ' LOST PARTNER' + #$0A;
    FreeAndNil(FPort);
@@ -105,10 +150,10 @@ begin
 end;
 
 var
-   A, B: specialize TMessagePort<Integer>;
+   A, B: specialize TCustomMessagePort<Integer>;
    X, Y: TMessagePortTest;
 initialization
-   specialize TMessagePort<Integer>.CreateChannel(A, B);
+   specialize TCustomMessagePort<Integer>.CreateChannel(A, B);
    X := TMessagePortTest.Create('X', A);
    Y := TMessagePortTest.Create('Y', B);
    X.Test();
