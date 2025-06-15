@@ -7,6 +7,7 @@ interface
 function GetRefCount(constref S: UTF8String): SizeInt; inline;
 procedure IncRefCount(var S: UTF8String); inline;
 procedure DecRefCount(var S: UTF8String); inline;
+function IsStringConstant(constref S: UTF8String): Boolean; inline;
 
 {$IFOPT C+} procedure AssertStringIsConstant(constref S: UTF8String); {$ENDIF}
 {$IFOPT C+} procedure AssertStringIsReffed(constref S: UTF8String; const MinRef: Cardinal); {$ENDIF}
@@ -74,6 +75,19 @@ begin
          Dec(StringStart^.RefCount);
       end;
    end;
+end;
+
+function IsStringConstant(constref S: UTF8String): Boolean;
+var
+   StringStart: PAnsiRec;
+begin
+   if (S <> '') then
+   begin
+      StringStart := PAnsiRec(Pointer(S)-SizeOf(TAnsiRec));
+      Result := StringStart^.RefCount = -1;
+   end
+   else
+      Result := True;
 end;
 
 {$IFOPT C+}
