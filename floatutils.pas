@@ -10,11 +10,10 @@ function ApproximatelyEqual(A, B: Double): Boolean;
 
 implementation
 
-{$IFDEF TESTS}
 uses
-   math;
-{$ENDIF}
-
+   {$IFDEF TESTS} math, {$ENDIF}
+   sysutils;
+        
 function ApproximatelyEqual(A, B: Double): Boolean;
 const
    Sign = $8000000000000000;
@@ -28,7 +27,7 @@ begin
       Result := False;
    end
    else
-   if (QWord(A) = QWord(B)) then
+   if (A = B) then
    begin
       Result := True;
    end
@@ -58,6 +57,10 @@ begin
          Result := (QA - QB) <= $7;
       end;
    end;
+   {$PUSH}
+   {$Q-}
+   Assert(Result or IsNaN(A) or IsNaN(B) or (A <> B), '(B - A)=' + IntToStr((QWord(B) - QWord(A))) + ', (A - B)=' + IntToStr((QWord(A) - QWord(B))));
+   {$POP}
 end;
 
 {$IFDEF TESTS}
@@ -76,7 +79,7 @@ const
    I: Double = 1.00000000000000100e20;
 begin
    Assert(ApproximatelyEqual(0.0, 0.0));
-   Assert(not ApproximatelyEqual(0.0, -0.0));
+   Assert(ApproximatelyEqual(0.0, -0.0));
    Assert(not ApproximatelyEqual(0.0, 1.0));
    Assert(not ApproximatelyEqual(0.0000000001, 0.00000000001)); // 10x difference
    Assert(A <> B);
