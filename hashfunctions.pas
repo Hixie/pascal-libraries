@@ -5,8 +5,10 @@ unit hashfunctions;
 interface
 
 type
-   THashTableSizeInt = 0..MaxInt;
+   THashTableSizeInt = DWord;
 
+function Integer8Hash32(const Key: Byte): DWord; inline;
+function Integer16Hash32(const Key: Word): DWord; inline;
 function Integer32Hash32(const Key: DWord): DWord; inline;
 function Integer64Hash32(const Key: QWord): DWord; inline;
 function LongIntHash32(const Key: LongInt): DWord; inline;
@@ -28,7 +30,6 @@ uses
 
 function Integer32Hash32(const Key: DWord): DWord;
 begin
-   Assert(SizeOf(DWord) * 8 = 32);
    Result := Key;
    { Robert Jenkins 32bit Integer Hash - http://burtleburtle.net/bob/hash/integer.html }
    {$PUSH}
@@ -48,7 +49,6 @@ function Integer64Hash32(const Key: QWord): DWord;
 var
    Scratch: QWord;
 begin
-   Assert(SizeOf(QWord) * 8 = 64);
    {$PUSH}
    {$OVERFLOWCHECKS OFF}
    {$RANGECHECKS OFF}
@@ -64,22 +64,22 @@ begin
    {$POP}
 end;
 
+function Integer8Hash32(const Key: Byte): DWord;
+begin
+   // TODO: is there a better way to hash 8 bits to 32 bits
+   Result := Integer32Hash32(Key);
+end;
+
+function Integer16Hash32(const Key: Word): DWord;
+begin
+   // TODO: is there a better way to hash 16 bits to 32 bits
+   Result := Integer32Hash32(Key);
+end;
+
 function LongIntHash32(const Key: LongInt): DWord;
 begin
-   Assert(SizeOf(LongInt) * 8 = 32);
-   Result := DWord(Key);
-   { Robert Jenkins 32bit Integer Hash - http://burtleburtle.net/bob/hash/integer.html }
-   {$PUSH}
-   {$OVERFLOWCHECKS OFF}
-   {$RANGECHECKS OFF}
-   {$HINTS OFF} // because all this intentionally overflows
-   Result := (Result  +  $7ed55d16)  +  (Result shl 12);
-   Result := (Result xor $c761c23c) xor (Result shr 19);
-   Result := (Result  +  $165667b1)  +  (Result shl  5);
-   Result := (Result  +  $d3a2646c) xor (Result shl  9);
-   Result := (Result  +  $fd7046c5)  +  (Result shl  3);
-   Result := (Result xor $b55a4f09) xor (Result shr 16);
-   {$POP}
+   Assert(SizeOf(LongInt) = SizeOf(DWord));
+   Result := Integer32Hash32(DWord(Key)); // this does a bitwise cast, and it doesn't range-check
 end;
 
 function PtrUIntHash32(const Key: PtrUInt): DWord;
