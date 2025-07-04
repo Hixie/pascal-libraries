@@ -7,8 +7,13 @@ interface
 uses
    hashfunctions;
 
+// Compared to TTightHashSet, this is quicker if you're doing a lot of
+// removals. But it uses a lot more memory. If you never remove
+// anything, or if you care more about memory usage, consider using
+// TTightHashSet or some variant thereof.
+
 type
-   generic THashSet <T, Utils> = class
+   generic THashSet <T, Utils> = class // for sample Utils, see genericutils.pas
     strict protected
      type
       PPHashSetEntry = ^PHashSetEntry;
@@ -172,7 +177,7 @@ end;
 
 procedure THashSet.Add(const Value: T);
 begin
-   Assert(not Has(Value));
+   Assert(not Has(Value), 'THashSet.Add must not be called with a value that is already in the set.');
    Inc(FCount);
    if (FCount/Length(FTable) > kMaxLoad) then
       DoubleSize();
