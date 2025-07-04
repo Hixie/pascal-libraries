@@ -54,28 +54,30 @@ then
   echo compile: Running ${TESTCMD} &&
   ${TESTCMD} || exit 1
 
-elif [ "${MODE}" = "VALGRIND-DEBUG" ]
+elif [ "${MODE}" = "PROFILE-DEBUG" ]
 then
 
-  echo compile: COMPILING - DEBUG BUILD WITH PROFILING ENABLED
-  fpc ${MAIN}.pas -l- -dOPT ${DEFINES} -Xs- -XX -B -v0einf -O4 -OWALL -FW${SRC}../bin/opt-feedback ${PATHS} 2>&1 || exit 1
-  cmp -s ${SRC}../bin/${BINARY} ${SRC}../bin/${BINARY}.last
-  until [ $? -eq 0 ]; do
-    echo compile: Trying to find optimisation stable point...
-    mv ${SRC}../bin/${BINARY} ${SRC}../bin/${BINARY}.last || exit
-    mv ${SRC}../bin/opt-feedback ${SRC}../bin/opt-feedback.last || exit
-    fpc ${MAIN}.pas -l- -dOPT ${DEFINES} -Xs- -XX -B -O4 -OwALL -Fw${SRC}../bin/opt-feedback.last -OWALL -FW${SRC}../bin/opt-feedback ${PATHS} || exit 1
-    cmp -s ${SRC}../bin/${BINARY} ${SRC}../bin/${BINARY}.last
-  done
-  echo compile: Final build...
-  fpc ${MAIN}.pas -gv -a -l- -dOPT ${DEFINES} -gl -Xs -XX -B -O4 -v0einf -OwALL -Fw${SRC}../bin/opt-feedback ${PATHS} 2>&1 || exit 1
-  rm -f ${SRC}../bin/*.o ${SRC}../bin/*.ppu ${SRC}../bin/*.last &&
-  ls -al ${SRC}../bin/${BINARY} &&
-  perl -E 'say ("executable size: " . (-s $ARGV[0]) . " bytes")' ${SRC}../bin/${BINARY} &&
+  # DEBUG MODE WITH PROFILER:
+  echo compile: COMPILING - DEBUG MODE WITH PROFILING ENABLED
+  fpc ${MAIN}.pas -l- -gv -dDEBUG ${DEFINES} -Ci -Co -CO -Cr -CR -Ct -O- -gt -gl -gh -Sa -veiwnhb ${PATHS} 2>&1 | ${SRC}lib/filter.pl || exit 1
   cd ${SRC}.. &&
-  #echo compile: Entering directory \`${PWD}/\' &&
-  echo compile: Running ${TESTCMD} &&
-  ${TESTCMD} || exit 1
+  echo compile: Running valgrind --tool=callgrind ${TESTCMD} &&
+  valgrind --tool=callgrind --callgrind-out-file=bin/callgrind.out ${TESTCMD};
+  callgrind_annotate --auto=yes --inclusive=yes --tree=both bin/callgrind.out > callgrind.inclusive.txt
+  callgrind_annotate --auto=yes --inclusive=no --tree=none bin/callgrind.out > callgrind.exclusive.txt
+
+
+elif [ "${MODE}" = "FAST-PROFILE" ]
+then
+
+  # FASTER PROFILE MODE:
+  echo compile: COMPILING - OPTIMISED BUILD WITH PROFILING ENABLED
+  fpc ${MAIN}.pas -l- -gv -dOPT ${DEFINES} -Xs- -XX -B -v0einf -O4 ${PATHS} 2>&1 || exit 1
+  cd ${SRC}.. &&
+  echo compile: Running valgrind --tool=callgrind ${TESTCMD} &&
+  valgrind --tool=callgrind --callgrind-out-file=bin/callgrind.out ${TESTCMD};
+  callgrind_annotate --auto=yes --inclusive=yes --tree=both bin/callgrind.out > callgrind.inclusive.txt
+  callgrind_annotate --auto=yes --inclusive=no --tree=none bin/callgrind.out > callgrind.exclusive.txt
 
 elif [ "${MODE}" = "PROFILE" ]
 then
