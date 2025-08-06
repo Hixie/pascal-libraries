@@ -108,7 +108,7 @@ procedure HeapInfoDisplayer(var PText: Text; P: Pointer);
 begin
    if (PHeapInfo(P)^ <> '') then
    begin
-      Writeln(PText, 'Debug log: ', PHeapInfo(P)^); // http://bugs.freepascal.org/view.php?id=25916
+      Writeln(PText, 'Debug log: ', PHeapInfo(P)^);
       Writeln(PText);
    end;
 end;
