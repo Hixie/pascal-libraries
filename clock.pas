@@ -16,6 +16,15 @@ type
       function Now(): TDateTime; override;
    end;
 
+   TMonotonicClock = class(TClock)
+   private
+      FParentClock: TClock;
+      FLast: TDateTime;
+   public
+      constructor Create(AParentClock: TClock);
+      function Now(): TDateTime; override;
+   end;
+
    // A clock that returns the same value every time Now() is called.
    // The value is forgotten when Unlatch() is called. The value is taken from the given parent TClock when
    // the time is first read after the object is created or after Unlatch() is called.
@@ -38,6 +47,29 @@ function TSystemClock.Now(): TDateTime;
 begin
    Result := sysutils.Now();
 end;
+
+
+constructor TMonotonicClock.Create(AParentClock: TClock);
+begin
+   inherited Create();
+   FParentClock := AParentClock;
+   FLast := FParentClock.Now;
+end;
+            
+function TMonotonicClock.Now(): TDateTime;
+begin
+   Result := FParentClock.Now;
+   if (Result < FLast) then
+   begin
+      {$IFOPT C+}
+      Writeln('MONOTONIC CLOCK DETECTED NEGATIVE TIME (was: ', FLast, '; now: ', Result, ')');
+      {$ENDIF}
+      Result := FLast;
+   end
+   else
+      FLast := Result;
+end;
+
 
 constructor TStableClock.Create(AParentClock: TClock);
 begin
