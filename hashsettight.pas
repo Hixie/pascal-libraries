@@ -87,6 +87,8 @@ type
         // types where Utils.Equals() can return true even for values
         // that are not pointer-equal, e.g. strings.
       procedure Remove(const Value: T);
+        // Remove() should only be called for values that are in the
+        // table (as checked by Has()).
       function Has(const Value: T): Boolean;
       property Count: TSizeInt read FCount;
       property IsEmpty: Boolean read GetIsEmpty;
@@ -102,6 +104,7 @@ type
           constructor Create(const Owner: TTightHashSet);
           function MoveNext(): Boolean;
           property Current: T read GetCurrent;
+          function GetEnumerator(): TEnumerator;
        end;
       function GetEnumerator(): TEnumerator;
    end;
@@ -382,22 +385,28 @@ end;
 
 function TTightHashSet.Intern(const Value: T): T;
 var
-   Hash: TSizeInt;
+   Index, Hash: TSizeInt;
 begin
    Assert(Utils.IsOccupied(Value), 'tried to intern nil value to tight hash set');
    if (FCount > 0) then
    begin
       Hash := Utils.Hash(Value) mod FAllocated; // $R-
-      while (Utils.IsNotEmpty(FTable^[Hash])) do
+      Index := Hash;
+      while (Utils.IsNotEmpty(FTable^[Index])) do
       begin
-         if (Utils.Equals(FTable^[Hash], Value)) then
+         if (Utils.Equals(FTable^[Index], Value)) then
          begin
-            Result := FTable^[Hash];
+            Result := FTable^[Index];
             exit;
          end;
-         Inc(Hash);
-         if (Hash = FAllocated) then
-            Hash := 0;
+         Inc(Index);
+         if (Index = FAllocated) then
+            Index := 0;
+         if (Index = Hash) then
+         begin
+            // Value is not in the set _and_ the set is full of sentinels.
+            break;
+         end;
       end;
    end;
    Add(Value);
@@ -448,6 +457,7 @@ procedure TTightHashSet.RemoveAt(const Hash: TSizeInt);
          Inc(Index);
          if (Index = FAllocated) then
             Index := 0;
+         Assert(Index <> Hash); // surely we can't loop all the way around
       end;
    end;
    {$POP}
@@ -498,20 +508,22 @@ end;
 
 procedure TTightHashSet.Remove(const Value: T);
 var
-   Hash: TSizeInt;
+   Index, Hash: TSizeInt;
 begin
    Assert(Utils.IsOccupied(Value), 'tried to remove nil value from tight hash set');
+   Assert(Has(Value), 'cannot remove a value that is not in the set');
    if (FCount > 0) then
    begin
       Hash := Utils.Hash(Value) mod FAllocated; // $R-
-      while (Utils.IsNotEmpty(FTable^[Hash])) do
+      Index := Hash;
+      while (Utils.IsNotEmpty(FTable^[Index])) do
       begin
-         if (Utils.Equals(FTable^[Hash], Value)) then
+         if (Utils.Equals(FTable^[Index], Value)) then
          begin
             Dec(FCount);
             if (FCount > 0) then
             begin
-               RemoveAt(Hash);
+               RemoveAt(Index);
             end
             else
             begin
@@ -519,42 +531,50 @@ begin
             end;
             exit;
          end;
-         Inc(Hash);
-         if (Hash = FAllocated) then
-            Hash := 0;
+         Inc(Index);
+         if (Index = FAllocated) then
+            Index := 0;
+         Assert(Index <> Hash);
       end;
    end;
 end;
 
 function TTightHashSet.Has(const Value: T): Boolean;
 var
-   Hash: TSizeIntIndex; // TODO: change this to TSizeInt when https://gitlab.com/freepascal.org/fpc/source/-/issues/41317 is fixed
+   Index, Hash: TSizeIntIndex; // TODO: change this to TSizeInt when https://gitlab.com/freepascal.org/fpc/source/-/issues/41317 is fixed
    NewPosition: TSizeIntIndex;
 begin
    Assert(Utils.IsOccupied(Value), 'tried to check for nil value in tight hash set');
    if (FCount > 0) then
    begin
       Hash := Utils.Hash(Value) mod FAllocated; // $R-
+      Index := Hash;
       NewPosition := -1;
-      while (Utils.IsNotEmpty(FTable^[Hash])) do
+      while (Utils.IsNotEmpty(FTable^[Index])) do
       begin
-         if (Utils.Equals(FTable^[Hash], Value)) then
+         if (Utils.Equals(FTable^[Index], Value)) then
          begin
             if (NewPosition >= 0) then
             begin
-               FTable^[NewPosition] := FTable^[Hash];
-               RemoveAt(Hash); // $R- // TODO: remove when Hash is a TSizeInt again
+               FTable^[NewPosition] := FTable^[Index];
+               RemoveAt(Index); // $R- // TODO: remove when Index is a TSizeInt again
             end;
             Result := True;
             exit;
          end;
-         if ((NewPosition < 0) and Utils.IsDeleted(FTable^[Hash])) then
+         if ((NewPosition < 0) and Utils.IsDeleted(FTable^[Index])) then
          begin
-            NewPosition := Hash;
+            NewPosition := Index;
          end;
-         Inc(Hash);
-         if (Hash = FAllocated) then
-            Hash := 0;
+         Inc(Index);
+         if (Index = FAllocated) then
+            Index := 0;
+         if (Index = Hash) then
+         begin
+            // Value is not in the set _and_ the set is full of sentinels.
+            // TODO: Consider repacking the entire set.
+            break;
+         end;
       end;
    end;
    Result := False;
@@ -562,6 +582,7 @@ end;
 
 constructor TTightHashSet.TEnumerator.Create(const Owner: TTightHashSet);
 begin
+   Assert(Assigned(Owner));
    FOwner := Owner;
    FIndex := -1;
 end;
@@ -573,10 +594,21 @@ end;
 
 function TTightHashSet.TEnumerator.MoveNext(): Boolean;
 begin
-   repeat
-      Inc(FIndex);
-      Result := FIndex < FOwner.FAllocated;
-   until (not Result) or (Utils.IsOccupied(FOwner.FTable^[FIndex]));
+   Assert(Assigned(FOwner));
+   if (FIndex < FOwner.FAllocated) then
+   begin
+      repeat
+         Inc(FIndex);
+         Result := FIndex < FOwner.FAllocated;
+      until (not Result) or (Utils.IsOccupied(FOwner.FTable^[FIndex]));
+   end
+   else
+      Result := False;
+end;
+
+function TTightHashSet.TEnumerator.GetEnumerator(): TEnumerator;
+begin
+   Result := Self;
 end;
 
 function TTightHashSet.GetEnumerator(): TEnumerator;
