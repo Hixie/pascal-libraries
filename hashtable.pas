@@ -126,11 +126,14 @@ type
           FIndex: THashTableSizeInt;
           FCurrent: Pointer;
           function GetCurrent(): TKey;
+          function GetCurrentValue(): TValue;
         public
           constructor Create(const Owner: THashTable);
           function MoveNext(): Boolean;
           property Current: TKey read GetCurrent;
+          property CurrentValue: TValue read GetCurrentValue;
           function GetEnumerator(): TKeyEnumerator;
+          property HashTable: THashTable read FOwner;
        end;
       function GetEnumerator(): TKeyEnumerator;
     public
@@ -146,6 +149,7 @@ type
           function MoveNext(): Boolean;
           property Current: TValue read GetCurrent;
           function GetEnumerator(): TValueEnumerator;
+          property HashTable: THashTable read FOwner;
        end;
       function Values(): TValueEnumerator;
    end;
@@ -450,6 +454,11 @@ end;
 function THashTable.TKeyEnumerator.GetCurrent(): TKey;
 begin
    Result := FOwner.GetKeyForEntry(FCurrent);
+end;
+
+function THashTable.TKeyEnumerator.GetCurrentValue(): TValue;
+begin
+   Result := FOwner.GetValueForEntry(FCurrent);
 end;
 
 function THashTable.TKeyEnumerator.MoveNext(): Boolean;
