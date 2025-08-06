@@ -19,7 +19,9 @@ type
     public
       constructor Create(const Input: UTF8String);
       function ReadLongint(): Longint;
-      function ReadCardinal(): Cardinal; // only supports values up to High(Longint)
+      function ReadCardinal(): Cardinal;
+      function ReadQWord(): QWord;
+      function ReadInt64(): Int64;
       function ReadDouble(): Double;
       function ReadString(): UTF8String;
       function ReadString(const MaxLength: Cardinal): UTF8String;
@@ -39,6 +41,8 @@ type
       constructor Create();
       procedure WriteLongint(const Value: Longint);
       procedure WriteCardinal(const Value: Cardinal);
+      procedure WriteQWord(const Value: QWord);
+      procedure WriteInt64(const Value: Int64);
       procedure WriteDouble(const Value: Double);
       procedure WriteString(const Value: UTF8String);
       procedure WriteBoolean(const Value: Boolean);
@@ -107,6 +111,19 @@ begin
    FPosition := Length(FInput)+1; // $R-
 end;
 
+function TStringStreamReader.ReadLongint(): Longint;
+var
+   Value: Int64;
+begin
+   Value := ParseInt64(ReadUntilNull(), Low(Int64));
+   if ((Value < Low(Longint)) or (Value > High(Longint))) then
+   begin
+      Value := 0;
+      Close();
+   end;
+   Result := Value; // $R-
+end;
+
 function TStringStreamReader.ReadCardinal(): Cardinal;
 var
    Value: Int64;
@@ -120,17 +137,14 @@ begin
    Result := Value; // $R-
 end;
 
-function TStringStreamReader.ReadLongint(): Longint;
-var
-   Value: Int64;
+function TStringStreamReader.ReadQWord(): QWord;
 begin
-   Value := ParseInt64(ReadUntilNull(), Low(Int64));
-   if ((Value < Low(Longint)) or (Value > High(Longint))) then
-   begin
-      Value := 0;
-      Close();
-   end;
-   Result := Value; // $R-
+   Result := ParseUInt64(ReadUntilNull(), 0);
+end;
+
+function TStringStreamReader.ReadInt64(): Int64;
+begin
+   Result := ParseInt64(ReadUntilNull(), 0);
 end;
 
 function TStringStreamReader.ReadDouble(): Double;
@@ -206,12 +220,22 @@ end;
 
 // TODO: this should not keep copying the string around
 
+procedure TStringStreamWriter.WriteLongint(const Value: Longint);
+begin
+   FValue := FValue + IntToStr(Value) + #0;
+end;
+
 procedure TStringStreamWriter.WriteCardinal(const Value: Cardinal);
 begin
    FValue := FValue + IntToStr(Value) + #0;
 end;
 
-procedure TStringStreamWriter.WriteLongint(const Value: Longint);
+procedure TStringStreamWriter.WriteQWord(const Value: QWord);
+begin
+   FValue := FValue + IntToStr(Value) + #0;
+end;
+
+procedure TStringStreamWriter.WriteInt64(const Value: Int64);
 begin
    FValue := FValue + IntToStr(Value) + #0;
 end;
