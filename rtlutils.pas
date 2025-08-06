@@ -12,6 +12,15 @@ function IsStringConstant(constref S: UTF8String): Boolean; inline;
 {$IFOPT C+} procedure AssertStringIsConstant(constref S: UTF8String); {$ENDIF}
 {$IFOPT C+} procedure AssertStringIsReffed(constref S: UTF8String; const MinRef: Cardinal); {$ENDIF}
 
+type
+   {$IFNDEF OPT}
+   TDebugObject = class(TObject)
+      procedure FreeInstance(); override;
+   end;
+   {$ELSE}
+   TDebugObject = TObject;
+   {$ENDIF}
+
 implementation
 
 type
@@ -115,6 +124,20 @@ begin
    end;
 end;
 {$ENDIF}
+
+
+procedure TDebugObject.FreeInstance();
+var
+   Instance: Pointer;
+begin
+   CleanupInstance;
+   {$PUSH}
+   {$POINTERMATH ON}
+   Instance := Self;
+   FillChar(Instance^, InstanceSize, $66);
+   {$POP}
+   FreeMem(Pointer(Self));
+end;
 
 initialization
    {$IFOPT C+}
