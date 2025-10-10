@@ -17,9 +17,12 @@ type
 function ReadFile(const FileName: AnsiString): TFileData; // This is efficient
 function ReadTextFile(const FileName: AnsiString): UTF8String; // This is not
 
+procedure WriteFile(const FileName: AnsiString; const FileData: TFileData);
 procedure WriteTextFile(const FileName: AnsiString; const Data: UTF8String);
 
 function IsEmptyDirectory(const Path: AnsiString): Boolean;
+
+procedure DeleteDirectoryRecursively(const Path: AnsiString);
 
 implementation
 
@@ -38,11 +41,8 @@ begin
    if (fpFStat(FileDescriptor, StatInfo) <> 0) then // $DFA- for StatInfo
       raise EKernelError.Create(fpGetErrNo);
    MapResult := fpMMap(nil, StatInfo.st_size+1, PROT_READ, MAP_PRIVATE, FileDescriptor, 0); // $R-
-   {$PUSH}
-   {$WARNINGS OFF} {$HINTS OFF}
-   if (PtrInt(MapResult) = -1) then
+   if (MapResult = MAP_FAILED) then
       raise EKernelError.Create(fpGetErrNo);
-   {$POP}
    fpClose(FileDescriptor);
    Result.Length := StatInfo.st_size; // $R-
    Result.Start := Pointer(MapResult);
@@ -66,13 +66,44 @@ begin
    Source.Destroy();
 end;
 
+procedure WriteFile(const FileName: AnsiString; const FileData: TFileData);
+var
+   FileDescriptor: CInt;
+   Written: Int64;
+   Buffer: PAnsiChar;
+   Remaining, SegmentSize: size_t;
+begin
+   FileDescriptor := fpOpen(FileName, O_CREAT or O_TRUNC or O_WRONLY);
+   if (FileDescriptor < 0) then
+      raise EKernelError.Create(fpGetErrNo);
+   try
+      Buffer := FileData.Start;
+      Remaining := FileData.Length;
+      while (Remaining > 0) do
+      begin
+         SegmentSize := Remaining;
+         if (SegmentSize > High(Written)) then
+            SegmentSize := High(Written);
+         Written := fpWrite(FileDescriptor, Buffer, SegmentSize);
+         if (Written < 0) then
+            raise EKernelError.Create(fpGetErrNo);
+         if (Written <> SegmentSize) then
+            raise Exception.Create('could not write entire file');
+         Inc(Buffer, Written);
+         Dec(Remaining, Written);
+      end;
+   finally
+      fpClose(FileDescriptor);
+   end;
+end;
+
 procedure WriteTextFile(const FileName: AnsiString; const Data: UTF8String);
 var
    F: Text;
 begin
    Assign(F, FileName);
    Rewrite(F);
-   Writeln(F, Data);
+   Write(F, Data);
    Close(F);
 end;
 
@@ -104,6 +135,31 @@ begin
    end
    else
       Result := False;
+end;
+
+procedure DeleteDirectoryRecursively(const Path: AnsiString);
+var
+   FileEntry: TRawbyteSearchRec;
+begin
+   Assert(Length(Path) > 1, 'Path is empty');
+   Assert(Path[Length(Path)] = '/', 'Path does not end with a slash');
+   if (FindFirst(Path + '*', faAnyFile, FileEntry) = 0) then
+   begin
+      repeat
+         if ((FileEntry.Name = '.') or (FileEntry.Name = '..')) then
+            continue;
+         if ((FileEntry.Attr and faDirectory) > 0) then
+         begin
+            DeleteDirectoryRecursively(Path + FileEntry.Name + '/');
+         end
+         else
+         begin
+            DeleteFile(Path + FileEntry.Name);
+         end;
+      until FindNext(FileEntry) <> 0;
+      FindClose(FileEntry);
+   end;
+   RemoveDir(Path);
 end;
 
 end.
