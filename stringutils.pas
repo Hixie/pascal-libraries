@@ -10,7 +10,7 @@ interface
 //{$DEFINE TESTS}
 
 uses
-   unicode, utf8, genericutils;
+   sysutils, unicode, utf8, genericutils;
 
 type
    TUTF8StringPointer = record
@@ -98,10 +98,31 @@ type
 function CodepointArrayToUTF8String(const Value: TUnicodeCodepointArray): UTF8String;
 // there's no UTF8StringToCodepointArray -- use the enumerator
 
-implementation
+const
+   FloatFormat: TFormatSettings = (
+      CurrencyFormat: 1;
+      NegCurrFormat: 1;
+      ThousandSeparator: ',';
+      DecimalSeparator: '.';
+      CurrencyDecimals: 2;
+      DateSeparator: '-';
+      TimeSeparator: ':';
+      ListSeparator: ',';
+      CurrencyString: '$';
+      ShortDateFormat: 'yyyy-mm-dd';
+      LongDateFormat: 'dd" "mmmm" "yyyy';
+      TimeAMString: 'AM';
+      TimePMString: 'PM';
+      ShortTimeFormat: 'hh:nn';
+      LongTimeFormat: 'hh:nn:ss';
+      ShortMonthNames: ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec');
+      LongMonthNames: ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December');
+      ShortDayNames: ('Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat');
+      LongDayNames: ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday');
+      TwoDigitYearCenturyWindow: 50
+   );
 
-uses
-   sysutils;
+implementation
 
 {$IFOPT C+}
 function TUTF8StringPointer.IsZeroWidth(): Boolean;
