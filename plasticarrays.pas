@@ -45,6 +45,7 @@ type
       function Contains(const Value: T; out IndexResult: Cardinal): Boolean; // linear search; IndexResult is only valid if result is True
       procedure RemoveShiftLeftInsert(const RemoveIndex, InsertIndex: Cardinal; NewValue: T);
       function Distill(): TArray; inline; // calls Squeeze(), extracts the array, then calls Init()
+      function Copy(): TArray; inline; // copies the entire array to a new array
     public
      type
       TCompareFunc = function (const A, B: T): Integer is nested;
@@ -260,6 +261,11 @@ begin
    Result := FArray;
    Init();
    Assert((not Assigned(Result)) or (Pointer(Result) <> Pointer(FArray)));
+end;
+
+function PlasticArray.Copy(): TArray;
+begin
+   Result := system.Copy(FArray, 0, FFilledLength);
 end;
 
 procedure PlasticArray.SortSubrange(L, R: Integer; const CompareFunc: TCompareFunc);
