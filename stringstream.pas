@@ -15,6 +15,7 @@ type
       FPosition: Cardinal; // last character to have been read
       FEnded: Boolean;
       function ReadUntilNull(const Terminal: Char = #0): UTF8String;
+      function GetCanReadMore(): Boolean; inline;
       procedure Close();
     public
       constructor Create(const Input: UTF8String);
@@ -28,7 +29,9 @@ type
       function ReadBoolean(): Boolean;
       procedure ReadEnd();
       procedure Bail(); // call this when you can't be bothered to check if the rest of the data is valid and you just want to stop reading
-      property Ended: Boolean read FEnded;
+      property Ended: Boolean read FEnded; // true if ReadEnd was called successfully
+      property CanReadMore: Boolean read GetCanReadMore;
+      {$IFOPT C+} property DebugMessage: UTF8String read FInput; {$ENDIF}
    end;
 
    TStringStreamWriter = class
@@ -56,31 +59,7 @@ type
 implementation
 
 uses
-   sysutils, intutils, exceptions, utf8 {$IFOPT C+}, math {$ENDIF};
-
-const FloatFormat: TFormatSettings = (
-   CurrencyFormat: 1;
-   NegCurrFormat: 1;
-   ThousandSeparator: ',';
-   DecimalSeparator: '.';
-   CurrencyDecimals: 2;
-   DateSeparator: '-';
-   TimeSeparator: ':';
-   ListSeparator: ',';
-   CurrencyString: '$';
-   ShortDateFormat: 'yyyy-mm-dd';
-   LongDateFormat: 'dd" "mmmm" "yyyy';
-   TimeAMString: 'AM';
-   TimePMString: 'PM';
-   ShortTimeFormat: 'hh:nn';
-   LongTimeFormat: 'hh:nn:ss';
-   ShortMonthNames: ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec');
-   LongMonthNames: ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December');
-   ShortDayNames: ('Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat');
-   LongDayNames: ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday');
-   TwoDigitYearCenturyWindow: 50
-);
-
+   sysutils, intutils, exceptions, utf8 {$IFOPT C+}, math {$ENDIF}, stringutils;
 
 constructor TStringStreamReader.Create(const Input: UTF8String);
 begin
@@ -105,10 +84,15 @@ begin
    Result := Copy(FInput, Start, FPosition - Start);
 end;
 
+function TStringStreamReader.GetCanReadMore(): Boolean;
+begin
+   Result := FPosition < Length(FInput);
+end;
+
 procedure TStringStreamReader.Close();
 begin
    // move pointer to past the end
-   FPosition := Length(FInput)+1; // $R-
+   FPosition := Length(FInput); // $R-
 end;
 
 function TStringStreamReader.ReadLongint(): Longint;
