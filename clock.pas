@@ -12,28 +12,39 @@ type
       function Now(): TDateTime; virtual; abstract;
    end;
 
-   TSystemClock = class(TClock)
+   TRootClock = class abstract (TClock)
+      constructor Create(); virtual; abstract;
+   end;
+   TRootClockClass = class of TRootClock;
+   
+   TSystemClock = class(TRootClock)
+      constructor Create(); override;
       function Now(): TDateTime; override;
    end;
 
-   TMonotonicClock = class(TClock)
-   private
+   TComposedClock = class abstract (TClock)
+   protected
       FParentClock: TClock;
+   public
+      constructor Create(AParentClock: TClock); virtual;
+   end;
+   
+   TMonotonicClock = class(TComposedClock)
+   private
       FLast: TDateTime;
    public
-      constructor Create(AParentClock: TClock);
+      constructor Create(AParentClock: TClock); override;
       function Now(): TDateTime; override;
    end;
 
    // A clock that returns the same value every time Now() is called.
    // The value is forgotten when Unlatch() is called. The value is taken from the given parent TClock when
    // the time is first read after the object is created or after Unlatch() is called.
-   TStableClock = class(TClock)
+   TStableClock = class(TComposedClock)
    private
-      FParentClock: TClock;
       FNow, FMax: TDateTime;
    public
-      constructor Create(AParentClock: TClock);
+      constructor Create(AParentClock: TClock); override;
       procedure Unlatch();
       procedure UnlatchUntil(Max: TDateTime);
       function Now(): TDateTime; override;
@@ -43,16 +54,26 @@ implementation
 
 uses math;
 
+constructor TSystemClock.Create();
+begin
+end;
+
 function TSystemClock.Now(): TDateTime;
 begin
    Result := sysutils.Now();
 end;
 
 
-constructor TMonotonicClock.Create(AParentClock: TClock);
+constructor TComposedClock.Create(AParentClock: TClock);
 begin
    inherited Create();
    FParentClock := AParentClock;
+end;
+
+
+constructor TMonotonicClock.Create(AParentClock: TClock);
+begin
+   inherited Create(AParentClock);
    FLast := FParentClock.Now;
 end;
             
@@ -73,8 +94,7 @@ end;
 
 constructor TStableClock.Create(AParentClock: TClock);
 begin
-   inherited Create();
-   FParentClock := AParentClock;
+   inherited Create(AParentClock);
    FNow := NaN;
    FMax := NaN;
 end;
@@ -93,6 +113,7 @@ end;
             
 function TStableClock.Now(): TDateTime;
 begin
+   Assert(Assigned(FParentClock));
    if (IsNaN(FNow)) then
    begin
       FNow := FParentClock.Now();
