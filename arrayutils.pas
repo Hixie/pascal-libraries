@@ -17,38 +17,50 @@ type
 // binary searches between L and R and returns the lowest index for which SearchEvaluationFunc returns a positive value
 function BinarySearch(L, R: Integer; const SearchEvaluationFunc: TSearchEvaluationFunc): Integer;
 
-type
-   TSwapFunc = procedure (const A, B: Integer) is nested;
-   TCompareFunc = function (const A, B: Integer): Integer is nested;
+// TODO: use Utils for inlining comparisons
 
-// Use as follows:
-//
-// function Compare(const A, B: Cardinal): Integer;
-// begin
-//    Result := FArray[A] - FArray[B];
-// end;
-//
-// procedure Swap(const A, B: Cardinal);
-// var
-//    Temp: T;
-// begin
-//    Temp := FArray[B];
-//    FArray[A] := FArray[B];
-//    FArray[B] := Temp;
-// end;
-//
-// Sort(Length(FArray), Compare, Swap);
-procedure Sort(const Length: Integer; const CompareFunc: TCompareFunc; const SwapFunc: TSwapFunc);
+type
+   generic TCompareFunc<T> = function (const A, B: T): Integer is nested;
 
 // Use as follows:
 //
 // specialize Sort<Double>(FArray);
 generic procedure Sort<T>(var A: array of T);
+    
+// Use as follows:
+//
+// specialize Sort<Double>(FArray, 2, 5);
+generic procedure QuickSort<T>(var A: array of T; L, R: Integer);
 
 // Use as follows:
 //
-// specialize QuickSort<Double>(FArray, 5, 10); // in-place sort the six items at positions 5..10
-generic procedure QuickSort<T>(var A: array of T; L, R: Integer);
+// function Compare(const A, B: TFoo): Integer;
+// begin
+//    Result := A.Value - B,Value;
+// end;
+//
+// specialize Sort<TFoo>(FArray, @CompareFunc);
+generic procedure Sort<T>(var A: array of T; const CompareFunc: specialize TCompareFunc<T>);
+
+// Use as follows:
+//
+// function Compare(const A, B: TFoo): Integer;
+// begin
+//    Result := A.Value - B,Value;
+// end;
+//
+// specialize Sort<TFoo>(Foo[0], Length(Foo), @Compare);
+generic procedure Sort<T>(var A; Length: Cardinal; const CompareFunc: specialize TCompareFunc<T>);
+
+// Use as follows:
+//
+// function Compare(const A, B: TFoo): Integer;
+// begin
+//    Result := A.Value - B,Value;
+// end;
+//
+// specialize Sort<TFoo>(Foo[0], 2, 5, @Compare);
+generic procedure QuickSort<T>(var A; L, R: Integer; const CompareFunc: specialize TCompareFunc<T>);
 
 implementation
 
@@ -118,37 +130,50 @@ begin
    end;
 end;
 
-procedure QuickSort(L, R: Integer; const CompareFunc: TCompareFunc; const SwapFunc: TSwapFunc);
+generic procedure QuickSort<T>(var A; L, R: Integer; const CompareFunc: specialize TCompareFunc<T>);
+type
+   PT = ^T;
 var
-   I, J, P: Integer;
+   I, J: Integer;
+   P, Q: T;
 begin
    // based on QuickSort in rtl/objpas/classes/lists.inc
+   {$POINTERMATH ON}
    repeat
       I := L;
       J := R;
-      P := (L + R) div 2; // $R-
+      P := (PT(@A) + (L + R) div 2)^;
       repeat
-         while (CompareFunc(P, I) > 0) do
+         while CompareFunc(P, (PT(@A) + I)^) > 0 do
             Inc(I); // $R-
-         while (CompareFunc(P, J) < 0) do
+         while CompareFunc(P, (PT(@A) + J)^) < 0 do
             Dec(J); // $R-
          if (I <= J) then
          begin
-            SwapFunc(I, J);
+            Q := (PT(@A) + J)^;
+            (PT(@A) + J)^ := (PT(@A) + I)^;
+            (PT(@A) + I)^ := Q;
             Inc(I); // $R-
             Dec(J); // $R-
          end;
       until I > J;
       if (L < J) then
-         QuickSort(L, J, CompareFunc, SwapFunc);
+         specialize QuickSort<T>(A, L, J, CompareFunc);
       L := I;
    until I >= R;
+   {$POINTERMATH OFF}
 end;
 
-procedure Sort(const Length: Integer; const CompareFunc: TCompareFunc; const SwapFunc: TSwapFunc);
+generic procedure Sort<T>(var A; Length: Cardinal; const CompareFunc: specialize TCompareFunc<T>);
 begin
    if (Length > 1) then
-      QuickSort(0, Length-1, CompareFunc, SwapFunc); // $R-
+      specialize QuickSort<T>(A, 0, Length - 1, CompareFunc); // $R-
+end;
+
+generic procedure Sort<T>(var A: array of T; const CompareFunc: specialize TCompareFunc<T>);
+begin
+   if (Length(A) > 1) then
+      specialize QuickSort<T>(A, Low(A), High(A), CompareFunc); // $R-
 end;
 
 generic procedure QuickSort<T>(var A: array of T; L, R: Integer);
