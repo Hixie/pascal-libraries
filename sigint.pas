@@ -10,16 +10,16 @@ uses sysutils, baseunix, exceptions;
 var
    Aborted: Boolean = False;
 
-procedure InstallSigIntHandler();
+procedure InstallAbortHandler(); // listens for SIGINT and SIGTERM
 
 implementation
 
-procedure SigIntHandler(Signal: Longint; Info: PSigInfo; Context: PSigContext); cdecl;
+procedure AbortHandler(Signal: Longint; Info: PSigInfo; Context: PSigContext); cdecl;
 begin
    Aborted := True;
 end;
 
-procedure InstallSigIntHandler();
+procedure InstallAbortHandler();
 var
    NewAction: PSigActionRec;
 begin
@@ -27,11 +27,17 @@ begin
    if (not Assigned(NewAction)) then
       OutOfMemoryError();
    try
-      NewAction^.sa_handler := @SigIntHandler;
-      NewAction^.sa_flags := SA_ONESHOT;
       {$IFDEF Linux} NewAction^.sa_restorer := nil; {$ENDIF}
       FillByte(NewAction^.sa_mask, SizeOf(NewAction^.sa_mask), 0);
+
+      NewAction^.sa_handler := @AbortHandler;
+      NewAction^.sa_flags := SA_ONESHOT;
       if (fpSigAction(baseunix.SIGINT, NewAction, nil) <> 0) then
+         raise EKernelError.Create(fpGetErrNo);
+
+      NewAction^.sa_handler := @AbortHandler;
+      NewAction^.sa_flags := SA_ONESHOT;
+      if (fpSigAction(baseunix.SIGTERM, NewAction, nil) <> 0) then
          raise EKernelError.Create(fpGetErrNo);
    finally
       Dispose(NewAction);
