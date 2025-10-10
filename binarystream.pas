@@ -25,6 +25,7 @@ type
       function ReadDouble(): Double;
       function ReadString(): RawByteString;
       function ReadBytes(): TBytes;
+      procedure ReadEnd();
       procedure ReadRawBytes(Length: Cardinal; out Output);
       procedure Reset(); // returns position to start
       procedure Truncate(Remainder: Cardinal); // truncates the input so that only Remainder bytes remain
@@ -197,6 +198,12 @@ begin
       Move(FInput[FPosition], Output, Length); {BOGUS Hint: Variable "Output" does not seem to be initialized}
       Inc(FPosition, Length);
    end;
+end;
+
+procedure TBinaryStreamReader.ReadEnd();
+begin
+   if (FPosition <> Length(FInput) + 1) then
+      raise EBinaryStreamError.CreateFmt('Unexpected trailing data (position=%d, length=%d).', [FPosition, Length(FInput)]);
 end;
 
 procedure TBinaryStreamReader.Reset();
