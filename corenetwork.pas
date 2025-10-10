@@ -302,7 +302,7 @@ begin
       Received := fpRecv(FSocketNumber, @Data[0], Length(Data), 0); // $R-
       if (Received > 0) then
       begin
-         SetLength(Data, Received);
+         SetLength(Data, Received); // TODO: this is inefficient and might result in a copy
          {$IFDEF SUPER_VERBOSE_READ}
           system.Write('received: ');
           for i := 0 to Length(Data)-1 do // $R-
