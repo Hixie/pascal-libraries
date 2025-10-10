@@ -2,14 +2,16 @@
 # you can add -Fu / -Fi lines to PATHS if you like
 # you can add -dFOO to DEFINES if you like (for any value of FOO)
 # you can set TESTCMD if you want to run a particular command instead of the obvious
+# you can set NORUN to override TESTCMD
 
 # XXX -O4 should have LEVEL4 equivalent
 
 PATHS="-FE${SRC}../bin/ -Fu${SRC}lib -Fi${SRC}lib ${PATHS}"
 BINARY=`basename ${MAIN}`
 if [ "${TESTCMD}" = "" ]; then TESTCMD="bin/${BINARY}"; fi
+if [ "${NORUN}" != "" ]; then TESTCMD="echo Compiled ${BINARY} successfully."; fi
 
-echo "compile: mode=${MODE} main=${MAIN} testcmd=${TESTCMD} defines=${DEFINES}"
+# echo "compile: mode=${MODE} main=${MAIN} testcmd=${TESTCMD} defines=${DEFINES}"
 
 ulimit -v 800000
 
@@ -24,34 +26,31 @@ if [ "${MODE}" = "DEBUG" ]
 then
 
   # DEBUG MODE:
-  echo compile: COMPILING - DEBUG MODE
+  # echo compile: COMPILING - DEBUG MODE
   # add -vq to get warning numbers for {$WARN xxx OFF}
   fpc ${MAIN}.pas -l- -dDEBUG ${DEFINES} -Ci -Co -CO -Cr -CR -Ct -O- -gt -gl -gh -Sa -veiwnhb ${PATHS} 2>&1 | ${SRC}lib/filter.pl || exit 1
   cd ${SRC}.. &&
   #echo compile: Entering directory \`${PWD}/\' &&
-  echo compile: Running ${TESTCMD} &&
   ${TESTCMD} || exit 1
 
 elif [ "${MODE}" = "FAST-DEBUG" ]
 then
 
   # FASTER DEBUG MODE:
-  echo compile: COMPILING - DEBUG WITH OPTIMISATIONS
+  # echo compile: COMPILING - DEBUG WITH OPTIMISATIONS
   fpc ${MAIN}.pas -l- -dDEBUG -dOPT ${DEFINES} -Ci -Co -CO -Cr -CR -Ct -O4 -gt -gl -Sa -veiwnhb ${PATHS} 2>&1 | ${SRC}lib/filter.pl || exit 1
   cd ${SRC}.. &&
   #echo compile: Entering directory \`${PWD}/\' &&
-  echo compile: Running ${TESTCMD} &&
   ${TESTCMD} || exit 1
 
 elif [ "${MODE}" = "FAST" ]
 then
 
   # FASTER MODE:
-  echo compile: COMPILING - SIMPLE OPTIMISATIONS ONLY, SYMBOL INFO INCLUDED
+  # echo compile: COMPILING - SIMPLE OPTIMISATIONS ONLY, SYMBOL INFO INCLUDED
   fpc ${MAIN}.pas -l- -dOPT ${DEFINES} -O4 -Xs- -gl -veiwnhb ${PATHS} 2>&1 | ${SRC}lib/filter.pl || exit 1
   cd ${SRC}.. &&
   #echo compile: Entering directory \`${PWD}/\' &&
-  echo compile: Running ${TESTCMD} &&
   ${TESTCMD} || exit 1
 
 elif [ "${MODE}" = "PROFILE-DEBUG" ]
@@ -143,7 +142,6 @@ else
   perl -E 'say ("executable size: " . (-s $ARGV[0]) . " bytes")' ${SRC}../bin/${BINARY} &&
   cd ${SRC}.. &&
   #echo compile: Entering directory \`${PWD}/\' &&
-  echo compile: Running ${TESTCMD} &&
   time ${TESTCMD} || exit 1
 
 fi
