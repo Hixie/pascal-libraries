@@ -22,6 +22,7 @@ type
       procedure SetLast(const Item: T); inline;
       procedure SetFilledLength(const NewFilledLength: Cardinal); inline;
       function GetIsEmpty(): Boolean; inline;
+      function GetIsNotEmpty(): Boolean; inline;
     public
       // these calls are all O(1) except as noted
       procedure Init(LikelyLength: Cardinal = 0); inline; // call this if the PlasticArray is not pre-zeroed
@@ -35,12 +36,15 @@ type
       property Items[Index: Cardinal]: T read GetItem write SetItem; default;
       property Last: T read GetLast write SetLast;
       property IsEmpty: Boolean read GetIsEmpty;
+      property IsNotEmpty: Boolean read GetIsNotEmpty;
     public
       // The following calls are relatively expensive for various reasons
       procedure Squeeze(); inline; // reduces memory usage to minimum required
       procedure InsertAt(const Index: Cardinal; const Value: T); // does a memory move (if Index < FFilledLength)
       procedure RemoveAt(const Index: Cardinal); // does a memory move
-      procedure Remove(const Value: T); // does a linear search, then memory move
+      procedure Remove(const Value: T); // does a linear search (from end), then memory move
+      procedure RemoveAll(const Value: T); // walks the entire array
+      procedure Replace(const Value: T; const NewValue: T); // does a linear search (from end)
       function Contains(const Value: T): Boolean; // linear search
       function Contains(const Value: T; out IndexResult: Cardinal): Boolean; // linear search; IndexResult is only valid if result is True
       procedure RemoveShiftLeftInsert(const RemoveIndex, InsertIndex: Cardinal; NewValue: T);
@@ -67,6 +71,21 @@ type
           property Current: T read GetCurrent;
        end;
       function GetEnumerator(): TEnumerator; inline;
+    public
+     type
+       TFilteredEnumerator = class
+        strict private
+          FTarget: PPlasticArray;
+          FIndex: Cardinal;
+          FFilter: T;
+          function GetCurrent(): T;
+        public
+          constructor Create(const Target: PPlasticArray; const Filter: T);
+          function MoveNext(): Boolean;
+          property Current: T read GetCurrent;
+          function GetEnumerator(): TFilteredEnumerator; inline;
+       end;
+      function Without(const Value: T): TFilteredEnumerator; inline;
     public
      type
       TReadOnlyView = class
@@ -125,6 +144,11 @@ end;
 function PlasticArray.GetIsEmpty(): Boolean;
 begin
    Result := FFilledLength = 0;
+end;
+
+function PlasticArray.GetIsNotEmpty(): Boolean;
+begin
+   Result := FFilledLength > 0;
 end;
 
 procedure PlasticArray.SetFilledLength(const NewFilledLength: Cardinal);
@@ -203,6 +227,43 @@ begin
          if (Utils.Equals(FArray[Index], Value)) then
          begin
             RemoveAt(Index);
+            exit;
+         end;
+      until Index = Low(FArray);
+   end;
+end;
+
+procedure PlasticArray.RemoveAll(const Value: T);
+var
+   ReadIndex, WriteIndex: Cardinal;
+begin
+   ReadIndex := Low(FArray);
+   WriteIndex := Low(FArray);
+   while (ReadIndex < FFilledLength) do
+   begin
+      if (not Utils.Equals(FArray[ReadIndex], Value)) then
+      begin
+         if (WriteIndex <> ReadIndex) then
+            FArray[WriteIndex] := FArray[ReadIndex];
+         Inc(WriteIndex);
+      end;
+      Inc(ReadIndex);
+   end;
+   FFilledLength := WriteIndex;
+end;
+
+procedure PlasticArray.Replace(const Value: T; const NewValue: T);
+var
+   Index: Cardinal;
+begin
+   if (FFilledLength > 0) then
+   begin
+      Index := FFilledLength;
+      repeat
+         Dec(Index);
+         if (Utils.Equals(FArray[Index], Value)) then
+         begin
+            FArray[Index] := NewValue;
             exit;
          end;
       until Index = Low(FArray);
@@ -350,6 +411,7 @@ begin
       FisherYatesShuffle(FArray[0], FFilledLength, SizeOf(T)); // $R-
 end;
 
+
 constructor PlasticArray.TEnumerator.Create(const Target: PPlasticArray);
 begin
    inherited Create();
@@ -373,6 +435,40 @@ function PlasticArray.GetEnumerator(): TEnumerator;
 begin
    Result := TEnumerator.Create(@Self);
 end;
+
+
+constructor PlasticArray.TFilteredEnumerator.Create(const Target: PPlasticArray; const Filter: T);
+begin
+   inherited Create();
+   Assert(Assigned(Target));
+   FTarget := Target;
+   FFilter := Filter;
+end;
+
+function PlasticArray.TFilteredEnumerator.GetCurrent(): T;
+begin
+   Assert(FIndex > 0);
+   Result := FTarget^[FIndex-1]; // $R-
+end;
+
+function PlasticArray.TFilteredEnumerator.MoveNext(): Boolean;
+begin
+   repeat
+      Inc(FIndex);
+   until (FIndex > FTarget^.Length) or (not Utils.Equals(FTarget^[FIndex - 1], FFilter)); // $R-
+   Result := FIndex <= FTarget^.Length;
+end;
+
+function PlasticArray.TFilteredEnumerator.GetEnumerator(): TFilteredEnumerator;
+begin
+   Result := Self;
+end;
+
+function PlasticArray.Without(const Value: T): TFilteredEnumerator;
+begin
+   Result := TFilteredEnumerator.Create(@Self, Value);
+end;
+
 
 constructor PlasticArray.TReadOnlyView.Create(AArray: PPlasticArray);
 begin
