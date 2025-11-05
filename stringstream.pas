@@ -29,6 +29,7 @@ type
       function ReadBoolean(): Boolean;
       procedure ReadEnd();
       procedure Bail(); // call this when you can't be bothered to check if the rest of the data is valid and you just want to stop reading
+      procedure Rewind(); // return the read head to the beginning
       property Ended: Boolean read FEnded; // true if ReadEnd was called successfully
       property CanReadMore: Boolean read GetCanReadMore;
       {$IFOPT C+} property DebugMessage: UTF8String read FInput; {$ENDIF}
@@ -188,6 +189,12 @@ procedure TStringStreamReader.Bail();
 begin
    FEnded := True;
    Close();
+end;
+
+procedure TStringStreamReader.Rewind();
+begin
+   FEnded := False;
+   FPosition := 0;
 end;
 
 
