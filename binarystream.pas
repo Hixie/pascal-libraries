@@ -39,10 +39,14 @@ type
       type
          PSegment = ^TSegment;
          TSegment = record
-            Next: PSegment;
-            Data: array[0..SegmentSize-1] of Byte;
-            Length: Cardinal;
-            procedure Reset();
+         public
+            procedure Init(Size: Cardinal); // Size is how much memory was allocated (>= SizeOf(TSegment), by definition)
+         public
+            Next: PSegment; // must be first in record
+            Length, BufferSize: Cardinal; // BufferSize is the size of the buffer _if it is mutable_.
+            Buffer: Pointer;
+            BufferStart: record end; // must be last in record
+            // if the PSegment expects to have a buffer, it will be allocated with extra space here
          end;
       var
          FFirst: PSegment;
@@ -50,7 +54,8 @@ type
          FPosition: Cardinal; // position in FLast, 0-based
          FLength: Cardinal; // total length so far
          FSkip: Cardinal; // leading bytes to skip
-      function GetDestination(NeededLength: Cardinal): Pointer;
+      function GetReferenceSegment(BufferLength: Cardinal): PSegment; // allocates a TSegment with no buffer
+      function GetDestination(NeededLength: Cardinal): Pointer; // returns pointer to mutable part of a TSegment's buffer
    public
       destructor Destroy(); override;
       procedure WriteBoolean(const Value: Boolean);
@@ -61,9 +66,12 @@ type
       procedure WriteInt64(const Value: Int64);
       procedure WriteUInt64(const Value: UInt64);
       procedure WriteDouble(const Value: Double);
-      procedure WriteString(const Value: RawByteString);
-      procedure WriteBytes(const Value: TBytes);
-      procedure WriteRawBytes(Buffer: Pointer; Length: Cardinal);
+      procedure WriteString(const Value: RawByteString); // expensive
+      procedure WriteBytes(const Value: TBytes); // expensive
+      procedure WriteRawBytes(Buffer: Pointer; Length: Cardinal); // expensive
+      procedure WriteStringByPointer(const Value: RawByteString); // STRING MUST REMAIN VALID UNTIL CALL TO SERIALIZE
+      procedure WriteBytesByPointer(const Value: TBytes); // ARRAY MUST REMAIN VALID UNTIL CALL TO SERIALIZE
+      procedure WriteRawBytesByPointer(Buffer: Pointer; Length: Cardinal); // POINTER MUST REMAIN VALID UNTIL CALL TO SERIALIZE
       function Serialize(IncludeLengthPrefix: Boolean): RawByteString;
       procedure Consume(Count: Cardinal); // skips the leading Count bytes in future Serialize attempts
       procedure Clear(); // consume everything
@@ -218,10 +226,23 @@ begin
 end;
 
 
-procedure TBinaryStreamWriter.TSegment.Reset();
+procedure TBinaryStreamWriter.TSegment.Init(Size: Cardinal);
 begin
+   Assert(Size >= SizeOf(TSegment));
    Next := nil;
    Length := 0;
+   if (Size = SizeOf(TSegment)) then
+   begin
+      Buffer := nil;
+      BufferSize := 0;
+   end
+   else
+   begin
+      Buffer := @BufferStart;
+      Assert(PtrUInt(@BufferStart) - PtrUInt(@Next) = SizeOf(TSegment));
+      Assert(Size > SizeOf(TSegment));
+      BufferSize := Size - SizeOf(TSegment); // $R-
+   end;
 end;
 
 destructor TBinaryStreamWriter.Destroy();
@@ -231,33 +252,64 @@ begin
    while (Assigned(FFirst)) do
    begin
       Next := FFirst^.Next;
-      Dispose(FFirst);
+      FreeMem(FFirst);
       FFirst := Next;
    end;      
    inherited;
 end;
 
-function TBinaryStreamWriter.GetDestination(NeededLength: Cardinal): Pointer;
+function TBinaryStreamWriter.GetReferenceSegment(BufferLength: Cardinal): PSegment;
 begin
-   Assert(NeededLength > 0);
-   Assert(NeededLength <= SegmentSize);
    if (not Assigned(FLast)) then
    begin
-      New(FFirst);
-      FFirst^.Reset();
+      FFirst := GetMem(SizeOf(TSegment));
+      FFirst^.Init(SizeOf(TSegment));
       FLast := FFirst;
       FLast^.Next := nil;
       Assert(FPosition = 0);
    end
    else
-   if (FPosition + NeededLength >= High(FLast^.Data)) then
    begin
-      New(FLast^.Next);
+      FLast^.Next := GetMem(SizeOf(TSegment));
       FLast := FLast^.Next;
-      FLast^.Reset();
+      FLast^.Init(SizeOf(TSegment));
       FPosition := 0;
    end;
-   Result := Pointer(@FLast^.Data) + FPosition;
+   Result := FLast;
+   FLast^.Length := BufferLength;
+   Inc(FLength, BufferLength);
+end;
+
+function TBinaryStreamWriter.GetDestination(NeededLength: Cardinal): Pointer;
+var
+   BufferSize: Cardinal;
+begin
+   Assert(NeededLength > 0);
+   if (NeededLength > SegmentSize - SizeOf(TSegment)) then
+   begin
+      BufferSize := NeededLength + SizeOf(TSegment); // $R-
+   end
+   else
+   begin
+      BufferSize := SegmentSize;
+   end;
+   if (not Assigned(FLast)) then
+   begin
+      FFirst := GetMem(BufferSize);
+      FLast := FFirst;
+      FLast^.Init(BufferSize);
+      FLast^.Next := nil;
+      Assert(FPosition = 0);
+   end
+   else
+   if (NeededLength >= FLast^.BufferSize - FPosition) then
+   begin
+      FLast^.Next := GetMem(BufferSize);
+      FLast := FLast^.Next;
+      FLast^.Init(BufferSize);
+      FPosition := 0;
+   end;
+   Result := FLast^.Buffer + FPosition;
    Inc(FLast^.Length, NeededLength);
    Inc(FPosition, NeededLength);
    Inc(FLength, NeededLength);
@@ -324,25 +376,32 @@ begin
    PDouble(GetDestination(SizeOf(Double)))^ := Value;
 end;
 
-procedure TBinaryStreamWriter.WriteRawBytes(Buffer: Pointer; Length: Cardinal);
-var
-   ChunkSize: Cardinal;
+procedure TBinaryStreamWriter.WriteStringByPointer(const Value: RawByteString);
 begin
-   while (Length > 0) do
+   WriteCardinal(Length(Value));
+   if (Value <> '') then
    begin
-      Assert(FPosition <= SegmentSize);
-      ChunkSize := SegmentSize - FPosition; // $R-
-      if (ChunkSize = 0) then
-      begin
-         ChunkSize := SegmentSize;
-      end;
-      if (ChunkSize > Length) then
-      begin
-         ChunkSize := Length;
-      end;
-      Move(Buffer^, GetDestination(ChunkSize)^, ChunkSize);
-      Inc(Buffer, ChunkSize);
-      Dec(Length, ChunkSize);
+      WriteRawBytesByPointer(@Value[1], Length(Value)); // $R-
+   end;
+end;
+
+procedure TBinaryStreamWriter.WriteBytesByPointer(const Value: TBytes);
+begin
+   WriteCardinal(Length(Value));
+   if (Length(Value) > 0) then
+      WriteRawBytesByPointer(@Value[0], Length(Value)); // $R-
+end;
+
+procedure TBinaryStreamWriter.WriteRawBytesByPointer(Buffer: Pointer; Length: Cardinal);
+begin
+   if (Length > FLast^.BufferSize - FPosition) then
+   begin
+      GetReferenceSegment(Length)^.Buffer := Buffer;
+   end
+   else
+   if (Length > 0) then
+   begin
+      Move(Buffer^, GetDestination(Length)^, Length);
    end;
 end;
 
@@ -358,6 +417,11 @@ begin
    WriteCardinal(Length(Value));
    if (Length(Value) > 0) then
       WriteRawBytes(@Value[0], Length(Value)); // $R-
+end;
+
+procedure TBinaryStreamWriter.WriteRawBytes(Buffer: Pointer; Length: Cardinal);
+begin
+   Move(Buffer^, GetDestination(Length)^, Length);
 end;
 
 function TBinaryStreamWriter.Serialize(IncludeLengthPrefix: Boolean): RawByteString;
@@ -382,7 +446,7 @@ begin
    while (Assigned(Segment)) do
    begin
       Assert(Skip < Segment^.Length);
-      Move(Segment^.Data[Skip], Buffer[Index], Segment^.Length - Skip);
+      Move((Segment^.Buffer + Skip)^, Buffer[Index], Segment^.Length - Skip);
       Inc(Index, Segment^.Length - Skip);
       Segment := Segment^.Next;
       Skip := 0;
@@ -407,8 +471,9 @@ begin
       begin
          FLast := nil;
          FPosition := 0;
+         Assert(not Assigned(FFirst));
       end;
-      Dispose(Segment);
+      FreeMem(Segment);
    end;
 end;
 
@@ -420,7 +485,7 @@ begin
    begin
       Segment := FFirst;
       FFirst := FFirst^.Next;
-      Dispose(Segment);
+      FreeMem(Segment);
    end;
    FLast := nil;
    FPosition := 0;
