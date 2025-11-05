@@ -15,11 +15,15 @@ if [ "${NORUN}" != "" ]; then TESTCMD="echo Compiled ${BINARY} successfully."; f
 
 ulimit -v 800000
 
-if [ ! -f ${SRC}../bin/MODE.${MODE} ]
+SETTINGS="${MODE} ${DEFINES}"
+touch ${SRC}../bin/SETTINGS
+if [ "$(< ${SRC}../bin/SETTINGS)" != "${SETTINGS}" ]
 then
-  echo "compile: Last compile mode was not ${MODE}, so wiping binary cache..."
+  echo "compile: Settings changed; wiping binary cache..."
+  echo "compile: Old settings: $(< ${SRC}../bin/SETTINGS)"
+  echo "compile: New settings: ${SETTINGS}"
   rm -rf ${SRC}../bin/*
-  touch ${SRC}../bin/MODE.${MODE}
+  echo -n "$SETTINGS" > ${SRC}../bin/SETTINGS
 fi
 
 if [ "${MODE}" = "DEBUG" ]
