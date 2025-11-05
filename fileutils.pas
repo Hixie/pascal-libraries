@@ -15,6 +15,8 @@ type
    end;
 
 function ReadFile(const FileName: AnsiString): TFileData; // This is efficient
+function ReadFileTail(const FileName: AnsiString; Length: QWord; out EndOffset: QWord): TFileData; // This is efficient
+function ReadFilePart(const FileName: AnsiString; Length, EndOffset: QWord): TFileData; // This is efficient
 function ReadTextFile(const FileName: AnsiString): UTF8String; // This is not
 
 procedure WriteFile(const FileName: AnsiString; const FileData: TFileData);
@@ -40,17 +42,109 @@ begin
       raise EKernelError.Create(fpGetErrNo);
    if (fpFStat(FileDescriptor, StatInfo) <> 0) then // $DFA- for StatInfo
       raise EKernelError.Create(fpGetErrNo);
-   MapResult := fpMMap(nil, StatInfo.st_size+1, PROT_READ, MAP_PRIVATE, FileDescriptor, 0); // $R-
-   if (MapResult = MAP_FAILED) then
-      raise EKernelError.Create(fpGetErrNo);
-   fpClose(FileDescriptor);
+   try
+      if (StatInfo.st_size = 0) then
+      begin
+         Result.Length := 0;
+         Result.Start := nil;
+         exit;
+      end;
+      MapResult := fpMMap(nil, StatInfo.st_size, PROT_READ, MAP_PRIVATE, FileDescriptor, 0); // $R-
+      if (MapResult = MAP_FAILED) then
+         raise EKernelError.Create(fpGetErrNo);
+   finally
+      fpClose(FileDescriptor);
+   end;
    Result.Length := StatInfo.st_size; // $R-
+   Result.Start := Pointer(MapResult);
+end;
+
+function ReadFileTail(const FileName: AnsiString; Length: QWord; out EndOffset: QWord): TFileData;
+var
+   FileDescriptor: CInt;
+   StatInfo: Stat;
+   MapResult: Pointer;
+   Offset: Off_T;
+begin
+   FileDescriptor := fpOpen(FileName, O_RDONLY);
+   if (FileDescriptor < 0) then
+      raise EKernelError.Create(fpGetErrNo);
+   if (fpFStat(FileDescriptor, StatInfo) <> 0) then // $DFA- for StatInfo
+      raise EKernelError.Create(fpGetErrNo);
+   try
+      if (StatInfo.st_size = 0) then
+      begin
+         Result.Length := 0;
+         Result.Start := nil;
+         EndOffset := 0;
+         exit;
+      end;
+      if (StatInfo.st_size < Length) then
+      begin
+         Length := StatInfo.st_size; // $R-
+         EndOffset := Length;
+         Offset := 0;
+      end
+      else
+      begin
+         EndOffset := StatInfo.st_size; // $R- (st_size is a cLong)
+         Offset := StatInfo.st_size - Length;
+      end;
+      MapResult := fpMMap(nil, Length, PROT_READ, MAP_PRIVATE, FileDescriptor, Offset); // $R-
+      if (MapResult = MAP_FAILED) then
+         raise EKernelError.Create(fpGetErrNo);
+   finally
+      fpClose(FileDescriptor);
+   end;
+   Result.Length := Length; // $R-
+   Result.Start := Pointer(MapResult);
+end;
+
+function ReadFilePart(const FileName: AnsiString; Length, EndOffset: QWord): TFileData;
+var
+   FileDescriptor: CInt;
+   StatInfo: Stat;
+   MapResult: Pointer;
+   Offset: Off_T;
+begin
+   FileDescriptor := fpOpen(FileName, O_RDONLY);
+   if (FileDescriptor < 0) then
+      raise EKernelError.Create(fpGetErrNo);
+   if (fpFStat(FileDescriptor, StatInfo) <> 0) then // $DFA- for StatInfo
+      raise EKernelError.Create(fpGetErrNo);
+   try
+      if (StatInfo.st_size < EndOffset) then
+      begin
+         raise Exception.Create('File is shorter that requested end offset.');
+      end;
+      if (StatInfo.st_size = 0) then
+      begin
+         Result.Length := 0;
+         Result.Start := nil;
+         exit;
+      end;
+      if (EndOffset < Length) then
+      begin
+         Length := EndOffset;
+         Offset := 0;
+      end
+      else
+      begin
+         Offset := EndOffset - Length; // $R-
+      end;
+      MapResult := fpMMap(nil, Length, PROT_READ, MAP_PRIVATE, FileDescriptor, Offset); // $R-
+      if (MapResult = MAP_FAILED) then
+         raise EKernelError.Create(fpGetErrNo);
+   finally
+      fpClose(FileDescriptor);
+   end;
+   Result.Length := Length; // $R-
    Result.Start := Pointer(MapResult);
 end;
 
 procedure TFileData.Destroy();
 begin
-  if (fpMUnMap(Self.Start, Self.Length) <> 0) Then
+  if ((Length > 0) and (fpMUnMap(Start, Length) <> 0)) then
      raise EKernelError.Create(fpGetErrNo);
 end;
 
