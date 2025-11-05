@@ -10,6 +10,7 @@ uses
 type
    TClock = class abstract
       function Now(): TDateTime; virtual; abstract;
+      function AsUnixEpoch(): Int64;
    end;
 
    TRootClock = class abstract (TClock)
@@ -27,6 +28,7 @@ type
       FParentClock: TClock;
    public
       constructor Create(AParentClock: TClock); virtual;
+      property Parent: TClock read FParentClock;
    end;
    
    TMonotonicClock = class(TComposedClock)
@@ -52,7 +54,13 @@ type
 
 implementation
 
-uses math;
+uses math, dateutils;
+
+function TClock.AsUnixEpoch(): Int64;
+begin
+   Result := DateTimeToUnix(Now());
+end;
+
 
 constructor TSystemClock.Create();
 begin
