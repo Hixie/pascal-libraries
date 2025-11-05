@@ -29,24 +29,24 @@ generic procedure Sort<T>(var A: array of T);
     
 // Use as follows:
 //
-// specialize Sort<Double>(FArray, 2, 5);
+// specialize QuickSort<Double>(FArray, 2, 5);
 generic procedure QuickSort<T>(var A: array of T; L, R: Integer);
 
 // Use as follows:
 //
 // function Compare(const A, B: TFoo): Integer;
 // begin
-//    Result := A.Value - B,Value;
+//    Result := A.Value - B.Value;
 // end;
 //
-// specialize Sort<TFoo>(FArray, @CompareFunc);
+// specialize Sort<TFoo>(FArray, @Compare);
 generic procedure Sort<T>(var A: array of T; const CompareFunc: specialize TCompareFunc<T>);
 
 // Use as follows:
 //
 // function Compare(const A, B: TFoo): Integer;
 // begin
-//    Result := A.Value - B,Value;
+//    Result := A.Value - B.Value;
 // end;
 //
 // specialize Sort<TFoo>(Foo[0], Length(Foo), @Compare);
@@ -56,10 +56,10 @@ generic procedure Sort<T>(var A; Length: Cardinal; const CompareFunc: specialize
 //
 // function Compare(const A, B: TFoo): Integer;
 // begin
-//    Result := A.Value - B,Value;
+//    Result := A.Value - B.Value;
 // end;
 //
-// specialize Sort<TFoo>(Foo[0], 2, 5, @Compare);
+// specialize QuickSort<TFoo>(Foo[0], 2, 5, @Compare);
 generic procedure QuickSort<T>(var A; L, R: Integer; const CompareFunc: specialize TCompareFunc<T>);
 
 implementation
