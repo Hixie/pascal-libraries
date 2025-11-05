@@ -410,6 +410,7 @@ begin
       // MSG_NOSIGNAL suppresses SIGPIPE on Linux (turns it into EPIPE instead)
       FpSetErrNo(Low(SocketError)); // sentinel so we can tell if failure happened without any error code (otherwise we might see ESysENoTTY)
       Sent := fpSend(FSocketNumber, FPendingWrites, FPendingWritesLength, {$IFDEF Linux} MSG_NOSIGNAL {$ELSE} 0 {$ENDIF});
+      {$IFDEF DEBUG} {$IFNDEF TESTSUITE} Sleep(500); {$ENDIF} {$ENDIF}
       if (Sent < FPendingWritesLength) then
       begin
          if (((Sent >= 0) or
