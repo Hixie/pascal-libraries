@@ -58,6 +58,7 @@ type
       procedure SortSubrange(L, R: Integer; const CompareFunc: TCompareFunc);
       procedure SortSubrange(L, R: Integer);
       procedure Shuffle();
+      function Find(Target: T): Cardinal; // binary search; assumes sorted input and Utils with functioning comparators; only works for arrays with FFilledLength <= High(Integer)
     public
      type
        TEnumerator = class
@@ -409,6 +410,22 @@ procedure PlasticArray.Shuffle();
 begin
    if (FFilledLength > 1) then
       FisherYatesShuffle(FArray[0], FFilledLength, SizeOf(T)); // $R-
+end;
+
+function PlasticArray.Find(Target: T): Cardinal;
+
+   function Search(const I: Integer): Int64;
+   begin
+      Result := Utils.Compare(FArray[I], Target);
+   end;
+   
+begin
+   if (FFilledLength = 0) then
+   begin
+      Result := 0;
+      exit;
+   end;
+   Result := BinarySearch(0, FFilledLength, @Search); // $R-
 end;
 
 
