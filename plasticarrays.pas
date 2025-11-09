@@ -44,6 +44,7 @@ type
       procedure RemoveAt(const Index: Cardinal); // does a memory move
       procedure Remove(const Value: T); // does a linear search (from end), then memory move
       procedure RemoveAll(const Value: T); // walks the entire array
+      procedure RemoveAllTrailing(const Value: T); // walks the entire array, backwards, stops at first non-matching (O(N), but relative cheap)
       procedure Replace(const Value: T; const NewValue: T); // does a linear search (from end)
       function Contains(const Value: T): Boolean; // linear search
       function Contains(const Value: T; out IndexResult: Cardinal): Boolean; // linear search; IndexResult is only valid if result is True
@@ -89,14 +90,15 @@ type
       function Without(const Value: T): TFilteredEnumerator; inline;
     public
      type
-      TReadOnlyView = class
-       private
+      TReadOnlyView = record
+       strict private
         var
           FArray: PPlasticArray;
-         constructor Create(AArray: PPlasticArray);
          function GetFilledLength(): Cardinal; inline;
          function GetItem(Index: Cardinal): T; inline;
          function GetLast(): T; inline;
+       private
+         procedure Init(AArray: PPlasticArray);
        public
          // these calls are all O(1)
          property Length: Cardinal read GetFilledLength;
@@ -251,6 +253,16 @@ begin
       Inc(ReadIndex);
    end;
    FFilledLength := WriteIndex;
+end;
+
+procedure PlasticArray.RemoveAllTrailing(const Value: T);
+begin
+   while (FFilledLength > 0) do
+   begin
+      if (not Utils.Equals(FArray[FFilledLength - 1], Value)) then // $R-
+         exit;
+      Dec(FFilledLength);
+   end;
 end;
 
 procedure PlasticArray.Replace(const Value: T; const NewValue: T);
@@ -487,7 +499,7 @@ begin
 end;
 
 
-constructor PlasticArray.TReadOnlyView.Create(AArray: PPlasticArray);
+procedure PlasticArray.TReadOnlyView.Init(AArray: PPlasticArray);
 begin
    Assert(Assigned(AArray));
    FArray := AArray;
@@ -515,7 +527,7 @@ end;
 
 function PlasticArray.GetReadOnlyView(): PlasticArray.TReadOnlyView;
 begin
-   Result := TReadOnlyView.Create(@Self);
+   Result.Init(@Self);
 end;
 
 end.
