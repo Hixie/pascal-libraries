@@ -10,7 +10,7 @@
 if [ "${BIN}" = "" ]; then BIN="${SRC}../bin/"; fi
 
 BINARY=`basename ${MAIN}`
-if [ "${TESTCMD}" = "" ]; then TESTCMD="${BINARY}"; fi
+if [ "${TESTCMD}" = "" ]; then TESTCMD="./${BINARY}"; fi
 if [ "${NORUN}" != "" ]; then TESTCMD="echo Compiled ${BINARY} successfully."; fi
 
 PATHS="-FE${BIN} -FU${BIN}units -Fu${SRC}lib -Fi${SRC}lib ${PATHS}"

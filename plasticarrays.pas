@@ -4,6 +4,8 @@ unit plasticarrays;
 
 interface
 
+// migration notes: "Init" can be removed or replaced by a call to Prepare
+
 const
    kGrowthFactor: Double = 1.25;
 
@@ -23,12 +25,9 @@ type
       procedure SetFilledLength(const NewFilledLength: Cardinal); inline;
       function GetIsEmpty(): Boolean; inline;
       function GetIsNotEmpty(): Boolean; inline;
-    public
-      // these calls are all O(1) except as noted
-      procedure Init(LikelyLength: Cardinal = 0); inline; // call this if the PlasticArray is not pre-zeroed
-        // (i.e. using this as a class member is fine; but if you use this in a procedure, call Init() first)
-        // this is because the FFilledLength member is not managed by the compiler
-        // This call is up to O(LikelyLength), because it zeroes out the array.
+   public
+      class operator Initialize(var Value: PlasticArray);
+      class operator Copy(constref Src: PlasticArray; var Dst: PlasticArray);
       procedure Push(const Item: T); inline; // expensive if it requires the length to be increased
       function Pop(): T; inline; // trivial, does not free memory for slot that is popped
       procedure Empty(); inline; // trivial, does not free memory
@@ -39,18 +38,21 @@ type
       property IsNotEmpty: Boolean read GetIsNotEmpty;
     public
       // The following calls are relatively expensive for various reasons
+      procedure Prepare(LikelyLength: Cardinal); inline; // increases the length to LikelyLength
       procedure Squeeze(); inline; // reduces memory usage to minimum required
       procedure InsertAt(const Index: Cardinal; const Value: T); // does a memory move (if Index < FFilledLength)
       procedure RemoveAt(const Index: Cardinal); // does a memory move
       procedure Remove(const Value: T); // does a linear search (from end), then memory move
       procedure RemoveAll(const Value: T); // walks the entire array
       procedure RemoveAllTrailing(const Value: T); // walks the entire array, backwards, stops at first non-matching (O(N), but relative cheap)
-      procedure Replace(const Value: T; const NewValue: T); // does a linear search (from end)
+      procedure Replace(const Value: T; const NewValue: T); // does a linear search (from end), replaces at most one value
       function Contains(const Value: T): Boolean; // linear search
       function Contains(const Value: T; out IndexResult: Cardinal): Boolean; // linear search; IndexResult is only valid if result is True
       procedure RemoveShiftLeftInsert(const RemoveIndex, InsertIndex: Cardinal; NewValue: T);
-      function Distill(): TArray; inline; // calls Squeeze(), extracts the array, then calls Init()
+      function Distill(): TArray; inline; // calls Squeeze(), extracts the array, then resets the PlasticArray
       function Copy(): TArray; inline; // copies the entire array to a new array
+      procedure Clone(out Dst: PlasticArray); inline; // creates a copy of the PlasticArray (copies the array)
+      procedure CloneFrom(const Src: PlasticArray); inline; // replaces this PlasticArray with a copy of the other (copies the array)
     public
      type
       TCompareFunc = function (const A, B: T): Integer is nested;
@@ -112,12 +114,16 @@ type
 implementation
 
 uses
-   arrayutils;
+   arrayutils, sysutils;
 
-procedure PlasticArray.Init(LikelyLength: Cardinal = 0);
+class operator PlasticArray.Initialize(var Value: PlasticArray);
 begin
-   FFilledLength := 0;
-   SetLength(FArray, LikelyLength);
+   Value.FFilledLength := 0;
+end;
+
+class operator PlasticArray.Copy(constref Src: PlasticArray; var Dst: PlasticArray);
+begin
+   raise Exception.Create('Attempted to copy a PlasticArray; use Clone instead if that was intended.');
 end;
 
 function PlasticArray.GetItem(const Index: Cardinal): T;
@@ -169,6 +175,13 @@ begin
          NewLength := NewFilledLength;
       SetLength(FArray, NewLength);
    end;
+end;
+
+procedure PlasticArray.Prepare(LikelyLength: Cardinal);
+begin
+   Assert(LikelyLength > 0);
+   Assert(LikelyLength >= FFilledLength);
+   SetLength(FArray, LikelyLength);
 end;
 
 procedure PlasticArray.Squeeze();
@@ -333,13 +346,26 @@ function PlasticArray.Distill(): TArray;
 begin
    Squeeze();
    Result := FArray;
-   Init();
+   FFilledLength := 0;
+   FArray := nil;
    Assert((not Assigned(Result)) or (Pointer(Result) <> Pointer(FArray)));
 end;
 
 function PlasticArray.Copy(): TArray;
 begin
    Result := system.Copy(FArray, 0, FFilledLength);
+end;
+
+procedure PlasticArray.Clone(out Dst: PlasticArray);
+begin
+   Dst.FArray := system.Copy(FArray);
+   Dst.FFilledLength := FFilledLength;
+end;
+
+procedure PlasticArray.CloneFrom(const Src: PlasticArray);
+begin
+   FArray := system.Copy(Src.FArray);
+   FFilledLength := Src.FFilledLength;
 end;
 
 procedure PlasticArray.SortSubrange(L, R: Integer; const CompareFunc: TCompareFunc);

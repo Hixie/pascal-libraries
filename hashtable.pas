@@ -41,7 +41,22 @@ uses
 
    Hash := TFooHashTable.Create(@FooHash32, PredictedCount);
 
- *****************************************************************************************)
+ * If the TValue type is mutable (i.e. not a value like a pointer or integer,
+ * but e.g. a record that exposes an interface that mutates its fields like
+ * PlasticArray), values should be obtained using ItemsPointer rather than
+ * Items (or the default [] operator). This will return a pointer to the value
+ * held in the hashtable. This pointer will remain valid for as long as it is
+ * in the hashtable; if it is removed, or if the hashtable is emptied or
+ * disposed, then the pointer will no longer be valid.
+ *
+ * Be careful not to make copies of such data (e.g. by dereferencing the
+ * pointer in a way that makes a temporary), as changes to copies will not
+ * propagate. Similarly, avoid using the values iterator, as it returns
+ * copies.
+ *
+ * Keys should never by mutable types.
+ *
+ * ****************************************************************************************)
 
 { The best case memory usage of a hash table on a 64 bit system is:
 
@@ -77,6 +92,9 @@ uses
 
 type
    generic THashTable <TKey, TValue, Utils> = class
+    public
+     type
+      PValue = ^TValue;
     strict protected
      type
       PPHashTableEntry = ^PHashTableEntry;
@@ -96,9 +114,10 @@ type
       procedure DoubleSize();
       procedure Resize(const NewSize: THashTableSizeInt);
       procedure PrepareForSize(PredictedCount: THashTableSizeInt);
-      procedure InternalAdd(var Table: array of PHashTableEntry; const Key: TKey; const Value: TValue);
+      function InternalAdd(const Key: TKey): PHashTableEntry;
       procedure Update(const Key: TKey; const Value: TValue); // will call Add() if the key isn't already present
       function Get(const Key: TKey): TValue;
+      function GetPtr(const Key: TKey): PValue;
       function GetKeyForEntry(const Entry: Pointer): TKey;
       function GetValueForEntry(const Entry: Pointer): TValue;
       procedure AdvanceEnumerator(var Current: Pointer; var Index: THashTableSizeInt);
@@ -111,9 +130,11 @@ type
       procedure Empty();
       procedure Remove(const Key: TKey);
       function Has(const Key: TKey): Boolean;
-      procedure Add(const Key: TKey; const Value: TValue);
+      procedure AddDefault(const Key: TKey); inline; // adds the value as Default(TValue)
+      procedure Add(const Key: TKey; const Value: TValue); inline;
       function Clone(): THashTable;
       property Items[Key: TKey]: TValue read Get write Update; default;
+      property ItemsPtr[Key: TKey]: PValue read GetPtr;
       {$IFDEF DEBUG} procedure Histogram(var F: Text); {$ENDIF}
       property Count: THashTableSizeInt read FCount;
       property IsEmpty: Boolean read GetIsEmpty;
@@ -228,7 +249,8 @@ procedure THashTable.Resize(const NewSize: THashTableSizeInt);
 var
    NewTable: array of PHashTableEntry;
    Index: THashTableSizeInt;
-   Item, LastItem: PHashTableEntry;
+   Item, NextItem: PHashTableEntry;
+   Hash: DWord;
 begin
    Assert(NewSize > 0);
    if (NewSize <> Length(FTable)) then
@@ -240,39 +262,45 @@ begin
          Item := FTable[Index];
          while (Assigned(Item)) do
          begin
-            InternalAdd(NewTable, Item^.Key, Item^.Value);
-            LastItem := Item;
-            Item := Item^.Next;
-            Dispose(LastItem);
+            NextItem := Item^.Next;
+            { This is safe because Length(table) is positive and 'mod' will only ever return a smaller value }
+            Hash := FHashFunction(Item^.Key) mod Length(NewTable); // $R-
+            Item^.Next := NewTable[Hash];
+            NewTable[Hash] := Item;
+            Item := NextItem;
          end;
       end;
       FTable := NewTable;
    end;
 end;
-
-procedure THashTable.InternalAdd(var Table: array of PHashTableEntry; const Key: TKey; const Value: TValue);
+      
+function THashTable.InternalAdd(const Key: TKey): PHashTableEntry;
 var
    Hash: DWord;
-   Entry: PHashTableEntry;
 begin
-   { This is safe because Length(table) is positive and 'mod' will only ever return a smaller value }
-   Hash := FHashFunction(Key) mod Length(Table); // $R-
-   New(Entry);
-   Entry^.Key := Key;
-   Entry^.Value := Value;
-   Entry^.Next := Table[Hash];
-   Table[Hash] := Entry;
-end;
-
-procedure THashTable.Add(const Key: TKey; const Value: TValue);
-begin
+   Assert(not Has(Key));
    Inc(FCount);
-   if (FCount/Length(FTable) > kMaxLoadFactor) then
+   if (FCount / Length(FTable) > kMaxLoadFactor) then
    begin
       { Wikipedia: "With a good hash function, the average lookup cost is nearly constant as the load factor increases from 0 up to 0.7 or so" }
       DoubleSize();
    end;
-   InternalAdd(FTable, Key, Value);
+   { This is safe because Length(table) is positive and 'mod' will only ever return a smaller value }
+   Hash := FHashFunction(Key) mod Length(FTable); // $R-
+   New(Result);
+   Result^.Key := Key;
+   Result^.Next := FTable[Hash];
+   FTable[Hash] := Result;
+end;
+
+procedure THashTable.AddDefault(const Key: TKey);
+begin
+   InternalAdd(Key);
+end;
+
+procedure THashTable.Add(const Key: TKey; const Value: TValue);
+begin
+   InternalAdd(Key)^.Value := Value;
 end;
 
 procedure THashTable.Remove(const Key: TKey);
@@ -315,6 +343,24 @@ begin
       Entry := Entry^.Next;
    end;
    Result := Default(TValue);
+end;
+
+function THashTable.GetPtr(const Key: TKey): PValue;
+var
+   Entry: PHashTableEntry;
+begin
+   { This is safe because Length(table) is positive and 'mod' will only ever return a smaller value }
+   Entry := FTable[FHashFunction(Key) mod Length(FTable)];
+   while (Assigned(Entry)) do
+   begin
+      if (Utils.Equals(Entry^.Key, Key)) then
+      begin
+         Result := @Entry^.Value;
+         exit;
+      end;
+      Entry := Entry^.Next;
+   end;
+   Result := nil;
 end;
 
 function THashTable.Has(const Key: TKey): Boolean;
