@@ -133,6 +133,7 @@ type
       procedure AddDefault(const Key: TKey); inline; // adds the value as Default(TValue)
       procedure Add(const Key: TKey; const Value: TValue); inline;
       function Clone(): THashTable;
+      function GetOrAddPtr(const Key: TKey): PValue;
       property Items[Key: TKey]: TValue read Get write Update; default;
       property ItemsPtr[Key: TKey]: PValue read GetPtr;
       {$IFDEF DEBUG} procedure Histogram(var F: Text); {$ENDIF}
@@ -278,6 +279,7 @@ function THashTable.InternalAdd(const Key: TKey): PHashTableEntry;
 var
    Hash: DWord;
 begin
+   // see also similar code in GetOrAddPtr
    Assert(not Has(Key));
    Inc(FCount);
    if (FCount / Length(FTable) > kMaxLoadFactor) then
@@ -361,6 +363,37 @@ begin
       Entry := Entry^.Next;
    end;
    Result := nil;
+end;
+
+function THashTable.GetOrAddPtr(const Key: TKey): PValue;
+var
+   Entry: PHashTableEntry;
+   Hash: DWord;
+begin
+   { This is safe because Length(table) is positive and 'mod' will only ever return a smaller value }
+   Hash := FHashFunction(Key) mod Length(FTable); // $R-
+   Entry := FTable[Hash];
+   while (Assigned(Entry)) do
+   begin
+      if (Utils.Equals(Entry^.Key, Key)) then
+      begin
+         Result := @Entry^.Value;
+         exit;
+      end;
+      Entry := Entry^.Next;
+   end;
+   // see InternalAdd
+   Inc(FCount);
+   if (FCount / Length(FTable) > kMaxLoadFactor) then
+   begin
+      { Wikipedia: "With a good hash function, the average lookup cost is nearly constant as the load factor increases from 0 up to 0.7 or so" }
+      DoubleSize();
+   end;
+   New(Entry);
+   Entry^.Key := Key;
+   Entry^.Next := FTable[Hash];
+   FTable[Hash] := Entry;
+   Result := @Entry^.Value;
 end;
 
 function THashTable.Has(const Key: TKey): Boolean;
