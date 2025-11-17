@@ -226,6 +226,7 @@ begin
    Assert(Child > 0);
    fpClose(FileDescriptors[1]);
    Result := TProcess.Create(Child, FileDescriptors[0]);
+   Assert(Assigned(Result));
 end;
 
 
