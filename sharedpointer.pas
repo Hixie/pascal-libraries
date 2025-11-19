@@ -14,6 +14,7 @@ type
          FRefCount: PCardinal;
       class procedure IncRef(var Self: SelfT); static; inline;
       class procedure DecRef(var Self: SelfT); static; inline;
+      function GetValue(): T; inline;
       function GetAssigned(): Boolean; inline;
    public
       class operator Initialize(var Self: SelfT);
@@ -22,7 +23,7 @@ type
       class operator Copy(constref Source: SelfT; var Destination: SelfT);
       class operator :=(const Source: T): SelfT;
       procedure Free();
-      property Value: T read FPointer;
+      property Value: T read GetValue;
       property Assigned: Boolean read GetAssigned;
    end;
    
@@ -64,16 +65,27 @@ begin
    {$ENDIF}
    if (system.Assigned(Self.FRefCount) and (InterlockedDecrement(Self.FRefCount^) = 0)) then
    begin
-      FreeAndNil(Self.FPointer);
-      Dispose(Self.FRefCount);
-      Self.FRefCount := nil;
+      try
+         FreeAndNil(Self.FPointer);
+      finally
+         Dispose(Self.FRefCount);
+         Self.FRefCount := nil;
+      end;
    end;
+end;
+
+function TSharedPointer.GetValue(): T;
+begin
+   Assert(system.Assigned(FPointer));
+   Assert(system.Assigned(FPointer) = system.Assigned(FRefCount), 'inconsistency in TSharedPointer: FPointer=' + HexStr(FPointer) + ', FRefCount=' + HexStr(FRefCount));
+   Assert((not system.Assigned(FPointer)) or (FRefCount^ > 0));
+   Result := FPointer;
 end;
 
 function TSharedPointer.GetAssigned(): Boolean;
 begin
    Result := system.Assigned(FPointer);
-   Assert(Result = system.Assigned(FRefCount));
+   Assert(Result = system.Assigned(FRefCount), 'inconsistency in TSharedPointer: FPointer=' + HexStr(FPointer) + ', FRefCount=' + HexStr(FRefCount));
    Assert((not Result) or (FRefCount^ > 0));
 end;
 
