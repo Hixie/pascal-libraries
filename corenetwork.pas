@@ -106,8 +106,15 @@ type
 
 implementation
 
+{$IFDEF DEBUG} {$IFNDEF TESTSUITE}
+   {$DEFINE FAKENETLATENCY}
+{$ENDIF} {$ENDIF}
+
 uses
-   sysutils {$IFDEF LINUX}, linux {$ENDIF} {$IFDEF VERBOSE_NETWORK}, errors {$ENDIF}; // errors is for StrError
+   sysutils
+   {$IFDEF LINUX}, linux {$ENDIF}
+   {$IFDEF VERBOSE_NETWORK}, errors {$ENDIF} // errors is for StrError
+   {$IFDEF FAKENETLATENCY}, random {$ENDIF};
 
 // {$DEFINE DISABLE_NAGLE} // should not be necessary
 
@@ -344,6 +351,11 @@ begin
    Write(@S[0], Length(S)); // $R-
 end;
 
+{$IFDEF FAKENETLATENCY}
+var
+   SleepRandom: TRandomNumberGenerator;
+{$ENDIF}
+
 procedure TNetworkSocket.Write(const S: Pointer; const Len: Cardinal);
 
 {$IFDEF SUPER_VERBOSE_SEND}
@@ -410,7 +422,7 @@ begin
       // MSG_NOSIGNAL suppresses SIGPIPE on Linux (turns it into EPIPE instead)
       FpSetErrNo(Low(SocketError)); // sentinel so we can tell if failure happened without any error code (otherwise we might see ESysENoTTY)
       Sent := fpSend(FSocketNumber, FPendingWrites, FPendingWritesLength, {$IFDEF Linux} MSG_NOSIGNAL {$ELSE} 0 {$ENDIF});
-      {$IFDEF DEBUG} {$IFNDEF TESTSUITE} Sleep(50); {$ENDIF} {$ENDIF}
+      {$IFDEF FAKENETLATENCY} Sleep(SleepRandom.GetCardinal(0, 7) * SleepRandom.GetCardinal(0, 7) * SleepRandom.GetCardinal(0, 7)); {$ENDIF}
       if (Sent < FPendingWritesLength) then
       begin
          if (((Sent >= 0) or
@@ -757,4 +769,10 @@ begin
    end;
 end;
 
+{$IFDEF FAKENETLATENCY}
+initialization
+   SleepRandom := TRandomNumberGenerator.Create(0);
+finalization
+   FreeAndNil(SleepRandom);
+{$ENDIF}
 end.
