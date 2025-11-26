@@ -233,6 +233,7 @@ end;
 procedure SigIntHandler(Signal: Longint; Info: PSigInfo; Context: PSigContext); cdecl;
 begin
    {$IFDEF DEBUG}
+     Writeln();
      Writeln('caught ^C; aborting at:');
      Writeln(GetStackTrace());
      Writeln();
@@ -240,17 +241,27 @@ begin
    Aborted := True;
 end;
 
-{$IFNDEF Linux}
+procedure SigTermHandler(Signal: Longint; Info: PSigInfo; Context: PSigContext); cdecl;
+begin
+   {$IFDEF DEBUG}
+     Writeln();
+     Writeln('caught SIGTERM; aborting at:');
+     Writeln(GetStackTrace());
+     Writeln();
+   {$ENDIF}
+   Aborted := True;
+end;
+
 procedure SigPipeHandler(Signal: Longint; Info: PSigInfo; Context: PSigContext); cdecl;
 begin
    {$IFDEF DEBUG}
      Writeln();
-     Writeln('caught SIGPIPE');
+     Writeln('caught SIGPIPE; aborting at:');
      Writeln(GetStackTrace());
      Writeln();
    {$ENDIF}
+   Aborted := True;
 end;
-{$ENDIF}
 
 function fpPidFdOpen(Pid: TPid; Flags: cuint = 0): cint;
 begin
@@ -274,14 +285,17 @@ begin
       if (fpSigAction(SIGINT, NewAction, nil) <> 0) then
          raise EKernelError.Create(fpGetErrNo);
 
-      {$IFNDEF Linux}
-      // SIGPIPE - persistent handler
-      // On Linux we use MSG_NOSIGNAL on send() instead -- see corenetwork.pas
+      // SIGTERM - one-off handler
+      NewAction^.sa_handler := @SigTermHandler;
+      NewAction^.sa_flags := SA_ONESHOT;
+      if (fpSigAction(SIGTERM, NewAction, nil) <> 0) then
+         raise EKernelError.Create(fpGetErrNo);
+
+      // SIGPIPE - one-off handler
       NewAction^.sa_handler := @SigPipeHandler;
-      NewAction^.sa_flags := SA_RESTART;
+      NewAction^.sa_flags := SA_ONESHOT;
       if (fpSigAction(SIGPIPE, NewAction, nil) <> 0) then
          raise EKernelError.Create(fpGetErrNo);
-      {$ENDIF}
 
    finally
       Dispose(NewAction);
@@ -319,7 +333,7 @@ begin
    while (Assigned(AuxiliaryVector^)) do
       Inc(AuxiliaryVector);
    Inc(AuxiliaryVector);
-   // AuxiliaryVector now points to the top of the AuxiliaryVector.
+   // AuxiliaryVector now points to the top of the Auxiliary Vector.
    Result := 0;
    while (Assigned(AuxiliaryVector^)) do
    begin

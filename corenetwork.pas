@@ -419,10 +419,10 @@ begin
    // time, and only then did the select loop get around to us.
    if (FPendingWritesLength > 0) then
    begin
-      // MSG_NOSIGNAL suppresses SIGPIPE on Linux (turns it into EPIPE instead)
       FpSetErrNo(Low(SocketError)); // sentinel so we can tell if failure happened without any error code (otherwise we might see ESysENoTTY)
-      Sent := fpSend(FSocketNumber, FPendingWrites, FPendingWritesLength, {$IFDEF Linux} MSG_NOSIGNAL {$ELSE} 0 {$ENDIF});
-      {$IFDEF FAKENETLATENCY} Sleep(SleepRandom.GetCardinal(0, 7) * SleepRandom.GetCardinal(0, 7) * SleepRandom.GetCardinal(0, 7)); {$ENDIF}
+      // MSG_NOSIGNAL suppresses SIGPIPE (turns it into EPIPE instead) - added to POSIX in 2008, so may not be available everywhere
+      Sent := fpSend(FSocketNumber, FPendingWrites, FPendingWritesLength, MSG_NOSIGNAL);
+      {$IFDEF FAKENETLATENCY} Sleep(SleepRandom.GetCardinal(0, 7) * SleepRandom.GetCardinal(0, 7) * SleepRandom.GetCardinal(0, 7)); {$ENDIF} // $R-
       if (Sent < FPendingWritesLength) then
       begin
          if (((Sent >= 0) or

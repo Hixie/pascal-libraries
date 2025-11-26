@@ -18,6 +18,7 @@ PATHS="-FE${BIN} -FU${BIN}units -Fu${SRC}lib -Fi${SRC}lib ${PATHS}"
 ulimit -v 800000
 
 mkdir -vp "${BIN}"
+# rm -rf "${BIN}units" # workaround for compiler crashing during incremental builds
 mkdir -vp "${BIN}units"
 SETTINGS="${MODE} ${DEFINES}"
 touch ${BIN}SETTINGS

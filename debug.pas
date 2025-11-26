@@ -114,6 +114,8 @@ begin
 end;
 
 initialization
+   Max_Frame_Dump := 64;
+   RaiseMaxFrameCount := 64;
    Assert(SizeOf(THeapInfo) = HeapInfoSize+1);
    SetHeapInfo('initialization');
    SetHeapExtraInfo(SizeOf(THeapInfo), @HeapInfoFiller, @HeapInfoDisplayer);
