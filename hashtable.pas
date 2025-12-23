@@ -120,7 +120,9 @@ type
       function GetPtr(const Key: TKey): PValue;
       function GetKeyForEntry(const Entry: Pointer): TKey;
       function GetValueForEntry(const Entry: Pointer): TValue;
+      function GetValuePtrForEntry(const Entry: Pointer): PValue;
       procedure AdvanceEnumerator(var Current: Pointer; var Index: THashTableSizeInt);
+      procedure RemoveEntry(Current: Pointer; Index: THashTableSizeInt);
     strict private
       function GetIsEmpty(): Boolean; inline;
       function GetIsNotEmpty(): Boolean; inline;
@@ -130,10 +132,10 @@ type
       procedure Empty();
       procedure Remove(const Key: TKey);
       function Has(const Key: TKey): Boolean;
-      procedure AddDefault(const Key: TKey); inline; // adds the value as Default(TValue)
+      function AddDefault(const Key: TKey): PValue; inline; // adds the value as Default(TValue)
       procedure Add(const Key: TKey; const Value: TValue); inline;
       function Clone(): THashTable;
-      function GetOrAddPtr(const Key: TKey): PValue;
+      function GetOrAddPtr(const Key: TKey): PValue; // only useful with fully managed types, or if result is always entirely overwritten (otherwise there's no way to distinguish newly added values from existing values)
       property Items[Key: TKey]: TValue read Get write Update; default;
       property ItemsPtr[Key: TKey]: PValue read GetPtr;
       {$IFDEF DEBUG} procedure Histogram(var F: Text); {$ENDIF}
@@ -174,12 +176,31 @@ type
           property HashTable: THashTable read FOwner;
        end;
       function Values(): TValueEnumerator;
+    public
+     type
+       TValuePtrEnumerator = class
+        strict private
+          FOwner: THashTable;
+          FIndex: THashTableSizeInt;
+          FCurrent: Pointer;
+          FAlreadyAdvanced: Boolean;
+          function GetCurrent(): PValue;
+          function GetCurrentKey(): TKey; inline;
+        public
+          constructor Create(const Owner: THashTable);
+          function MoveNext(): Boolean;
+          procedure RemoveCurrent();
+          property Current: PValue read GetCurrent;
+          property CurrentKey: TKey read GetCurrentKey;
+          function GetEnumerator(): TValuePtrEnumerator;
+          property HashTable: THashTable read FOwner;
+       end;
+      function ValuePtrs(): TValuePtrEnumerator;
    end;
 
    // XXX would be good to see if we can cache the enumerators mentioned above
    // e.g. by tracking if it's still in use, and having a "master" enumerator (cached the first time it's created) which
    // we only free when it's done, and whose .Free doesn't do anything if the instance is a master, or something
-   // (assuming for..in implicitly calls .Free)
 
 implementation
 
@@ -295,9 +316,9 @@ begin
    FTable[Hash] := Result;
 end;
 
-procedure THashTable.AddDefault(const Key: TKey);
+function THashTable.AddDefault(const Key: TKey): PValue;
 begin
-   InternalAdd(Key);
+   Result := @(InternalAdd(Key)^.Value);
 end;
 
 procedure THashTable.Add(const Key: TKey; const Value: TValue);
@@ -479,14 +500,28 @@ begin
    end;
 end;
 
+function THashTable.GetValuePtrForEntry(const Entry: Pointer): PValue;
+begin
+   if (Assigned(Entry)) then
+   begin
+      Result := @(PHashTableEntry(Entry)^.Value);
+   end
+   else
+   begin
+      Result := nil;
+   end;
+end;
+
 procedure THashTable.AdvanceEnumerator(var Current: Pointer; var Index: THashTableSizeInt);
 begin
    if (Assigned(Current)) then
    begin // advance
-      Current := PHashTableEntry(Current)^.Next
+      Current := PHashTableEntry(Current)^.Next;
    end
    else
+   if (FCount > 0) then
    begin // just started
+      Assert(Length(FTable) > 0);
       Assert(Index = 0);
       Current := FTable[Index];
    end;
@@ -494,6 +529,28 @@ begin
    begin
       Inc(Index);
       Current := FTable[Index];
+   end;
+end;
+
+procedure THashTable.RemoveEntry(Current: Pointer; Index: THashTableSizeInt);
+var
+   Entry: PHashTableEntry;
+   LastEntry: PPHashTableEntry;
+begin
+   Assert(Assigned(Current));
+   Entry := FTable[Index];
+   LastEntry := @FTable[Index];
+   while (Assigned(Entry)) do
+   begin
+      if (Entry = Current) then
+      begin
+         LastEntry^ := Entry^.Next;
+         Dispose(Entry);
+         Dec(FCount);
+         exit;
+      end;
+      LastEntry := @Entry^.Next;
+      Entry := Entry^.Next;
    end;
 end;
 
@@ -584,6 +641,59 @@ function THashTable.Values(): TValueEnumerator;
 begin
    Result := TValueEnumerator.Create(Self);
 end;
+
+
+constructor THashTable.TValuePtrEnumerator.Create(const Owner: THashTable);
+begin
+   FOwner := Owner;
+   FIndex := 0;
+   FCurrent := nil;
+   FAlreadyAdvanced := False;
+end;
+
+function THashTable.TValuePtrEnumerator.GetCurrent(): PValue;
+begin
+   Assert(not FAlreadyAdvanced);
+   Result := FOwner.GetValuePtrForEntry(FCurrent);
+end;
+
+function THashTable.TValuePtrEnumerator.GetCurrentKey(): TKey;
+begin
+   Assert(not FAlreadyAdvanced);
+   Result := FOwner.GetKeyForEntry(FCurrent);
+end;
+
+function THashTable.TValuePtrEnumerator.MoveNext(): Boolean;
+begin
+   if (not FAlreadyAdvanced) then
+      FOwner.AdvanceEnumerator(FCurrent, FIndex);
+   Result := Assigned(FCurrent);
+   FAlreadyAdvanced := False;
+end;
+
+procedure THashTable.TValuePtrEnumerator.RemoveCurrent();
+var
+   OldCurrent: Pointer;
+   OldIndex: THashTableSizeInt;
+begin
+   Assert(not FAlreadyAdvanced);
+   OldCurrent := FCurrent;
+   OldIndex := FIndex;
+   FOwner.AdvanceEnumerator(FCurrent, FIndex);
+   FOwner.RemoveEntry(OldCurrent, OldIndex);
+   FAlreadyAdvanced := True;
+end;
+
+function THashTable.TValuePtrEnumerator.GetEnumerator(): TValuePtrEnumerator;
+begin
+   Result := Self;
+end;
+
+function THashTable.ValuePtrs(): TValuePtrEnumerator;
+begin
+   Result := TValuePtrEnumerator.Create(Self);
+end;
+
 
 function THashTable.GetIsEmpty(): Boolean;
 begin
