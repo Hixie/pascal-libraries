@@ -22,6 +22,7 @@ type
       procedure SetItem(const Index: Cardinal; const Item: T); inline;
       function GetLast(): T; inline;
       procedure SetLast(const Item: T); inline;
+      procedure Grow(const MinCapacity: Cardinal); inline;
       procedure SetFilledLength(const NewFilledLength: Cardinal); inline;
       function GetIsEmpty(): Boolean; inline;
       function GetIsNotEmpty(): Boolean; inline;
@@ -39,6 +40,7 @@ type
     public
       // The following calls are relatively expensive for various reasons
       procedure Prepare(LikelyLength: Cardinal); inline; // increases the length to LikelyLength
+      procedure GrowFor(NewItems: Cardinal); inline; // increases the length to fit at least Length + NewItems, maybe more
       procedure Squeeze(); inline; // reduces memory usage to minimum required
       procedure InsertAt(const Index: Cardinal; const Value: T); // does a memory move (if Index < FFilledLength)
       procedure RemoveAt(const Index: Cardinal); // does a memory move
@@ -160,21 +162,25 @@ begin
    Result := FFilledLength > 0;
 end;
 
-procedure PlasticArray.SetFilledLength(const NewFilledLength: Cardinal);
+procedure PlasticArray.Grow(const MinCapacity: Cardinal);
 var
    NewLength: Int64;
+begin
+   Assert(MinCapacity > system.Length(FArray));
+   NewLength := Trunc(system.Length(FArray) * kGrowthFactor) + 1;
+   if (NewLength > High(Integer)) then
+      NewLength := High(Integer);
+   if (NewLength < MinCapacity) then
+      NewLength := MinCapacity;
+   SetLength(FArray, NewLength);
+end;
+
+procedure PlasticArray.SetFilledLength(const NewFilledLength: Cardinal);
 begin
    Assert(NewFilledLength <= High(Integer));
    FFilledLength := NewFilledLength;
    if (FFilledLength > System.Length(FArray)) then
-   begin
-      NewLength := Trunc(FFilledLength * kGrowthFactor) + 1;
-      if (NewLength > High(Integer)) then
-         NewLength := High(Integer);
-      if (NewLength < NewFilledLength) then
-         NewLength := NewFilledLength;
-      SetLength(FArray, NewLength);
-   end;
+      Grow(FFilledLength);
 end;
 
 procedure PlasticArray.Prepare(LikelyLength: Cardinal);
@@ -182,6 +188,16 @@ begin
    Assert(LikelyLength > 0);
    Assert(LikelyLength >= FFilledLength);
    SetLength(FArray, LikelyLength);
+end;
+
+procedure PlasticArray.GrowFor(NewItems: Cardinal);
+begin
+   Assert(NewItems > 0);
+   Assert(NewItems <= High(Integer));
+   Assert(FFilledLength <= High(Integer));
+   Assert(FFilledLength + NewItems <= High(Integer)); // $R-
+   if (FFilledLength + NewItems < system.Length(FArray)) then
+      Grow(FFilledLength + NewItems); // $R-
 end;
 
 procedure PlasticArray.Squeeze();
