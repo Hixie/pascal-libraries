@@ -60,7 +60,7 @@ type
 implementation
 
 uses
-   sysutils, intutils, exceptions, utf8 {$IFOPT C+}, math {$ENDIF}, stringutils;
+   sysutils, intutils, exceptions, utf8, math, stringutils;
 
 constructor TStringStreamReader.Create(const Input: UTF8String);
 begin
@@ -133,8 +133,21 @@ begin
 end;
 
 function TStringStreamReader.ReadDouble(): Double;
+var
+   Temp: Extended;
 begin
-   Result := StrToFloatDef(ReadUntilNull(), 0.0, FloatFormat); // $R-
+   Temp := StrToFloatDef(ReadUntilNull(), 0.0, FloatFormat); // $R-
+   if (IsNaN(Temp)) then
+   begin
+      Result := 0.0;
+   end
+   else
+   if (Abs(Temp) > MaxDouble) then
+   begin
+      Result := 0.0;
+   end
+   else
+      Result := Temp; // $R-
 end;
 
 function TStringStreamReader.ReadString(): UTF8String;
