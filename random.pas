@@ -5,6 +5,8 @@ unit random;
 // This is an implementation of the 32 bit PCG-XSH-RR generator with 64 bits of state.
 // See pcg-random.org.
 
+//{$DEFINE VERBOSE}
+
 interface
 
 type
@@ -14,6 +16,8 @@ type
    end;
 
    TRandomNumberGenerator = class
+   strict private
+      function InternalRNG(): UInt32;
    private
       var
          FState: UInt64;
@@ -24,7 +28,7 @@ type
    public
       constructor Create(ASeed: UInt64); // high bit of seed is dropped
       procedure Reset(NewState: UInt64);
-      function GetUInt32(): UInt32; // uniform 0..High(UInt32)
+      function GetUInt32(): UInt32; inline; // uniform 0..High(UInt32)
       function GetCardinal(Min, Max: Cardinal): Cardinal; // uniform Min..Max (inclusive, exclusive)
       function GetDouble(Min, Max: Double): Double; // uniform Min..Max (inclusive, exclusive)
       function GetBoolean(Probability: Double): Boolean; // P(True) = Probability (0..1)
@@ -43,6 +47,31 @@ const
    
 implementation
 
+function TRandomNumberGenerator.InternalRNG(): UInt32;
+
+   {$IFDEF VERBOSE}
+   procedure Log();
+   var
+      LogStackFrame, InternalRNGStackFrame, APIStackFrame: Pointer;
+   begin
+      LogStackFrame := Get_Frame;
+      InternalRNGStackFrame := Get_Caller_Frame(LogStackFrame);
+      APIStackFrame := Get_Caller_Frame(InternalRNGStackFrame);
+      Assert(Assigned(APIStackFrame));
+      Writeln('RNG for ', BackTraceStrFunc(Get_Caller_Addr(APIStackFrame)), ' at state ', FState);
+   end;
+   {$ENDIF}
+
+begin
+   {$IFDEF VERBOSE} Log(); {$ENDIF}
+   {$PUSH}
+   {$OVERFLOWCHECKS-}
+   {$RANGECHECKS-}
+   FState := FState * FMultiplier + FIncrement;
+   Result := RoRDWord((FState xor (FState >> 18)) >> 27, FState >> 59); // $R- // first argument intentionally drops some high bits
+   {$POP}
+end;
+   
 constructor TRandomNumberGenerator.Create(ASeed: UInt64);
 begin
    inherited Create();
@@ -66,27 +95,22 @@ end;
 
 function TRandomNumberGenerator.GetUInt32(): UInt32;
 begin
-   {$PUSH}
-   {$OVERFLOWCHECKS-}
-   {$RANGECHECKS-}
-   FState := FState * FMultiplier + FIncrement;
-   Result := RoRDWord((FState xor (FState >> 18)) >> 27, FState >> 59); // $R- // first argument intentionally drops some high bits
-   {$POP}
+   Result := InternalRNG();
 end;
 
 function TRandomNumberGenerator.GetCardinal(Min, Max: Cardinal): Cardinal;
 begin
-   Result := Min + Trunc((Max - Min) * GetUInt32() / (High(UInt32) + 1)); // $R-
+   Result := Min + Trunc((Max - Min) * InternalRNG() / (High(UInt32) + 1)); // $R-
 end;
 
 function TRandomNumberGenerator.GetDouble(Min, Max: Double): Double;
 begin
-   Result := Min + (Max - Min) * GetUInt32() / (High(UInt32) + 1.0);
+   Result := Min + (Max - Min) * InternalRNG() / (High(UInt32) + 1.0);
 end;
 
 function TRandomNumberGenerator.GetBoolean(Probability: Double): Boolean;
 begin
-   Result := GetUInt32() / (High(UInt32) + 1) < Probability;
+   Result := InternalRNG() / (High(UInt32) + 1) < Probability;
 end;
 
 function TRandomNumberGenerator.Perturb(Value: Double; const Parameters: TPerturbationParameters): Double;

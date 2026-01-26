@@ -108,6 +108,7 @@ implementation
 
 {$IFDEF DEBUG} {$IFNDEF TESTSUITE}
    {$DEFINE FAKENETLATENCY}
+   // {$HINT Enabling fake network latency.}
 {$ENDIF} {$ENDIF}
 
 uses
@@ -362,11 +363,18 @@ procedure TNetworkSocket.Write(const S: Pointer; const Len: Cardinal);
   function fpSend(s: cint; msg: pointer; len: size_t; flags: cint): ssize_t;
   var
      i: Cardinal;
+     b: Byte;
   begin
-     system.Write('fpSend called to send: ');
+     system.Write('sending to ', FSocketNumber, ': ');
      for i := 0 to len-1 do // $R-
-        system.Write(Chr(Byte((Msg+i)^)));
-     Writeln();
+     begin
+        b := Byte((Msg+i)^);
+        if ((b < $20) or (b >= $80)) then
+           system.Write('<', HexStr(b, 2), '>')
+        else
+           system.Write(Chr(b));
+     end;
+     system.Writeln();
      system.Write('                  hex: ');
      for i := 0 to len-1 do // $R-
         system.Write(IntToHex(Byte((Msg+i)^), 2), ' ');
@@ -660,7 +668,7 @@ begin
    begin
       {$IFDEF VERBOSE_NETWORK} Writeln('poll returned ', Pending, '; error is ', fpGetErrNo); {$ENDIF}
       case fpGetErrNo of
-         ESysEIntr: exit; { probably received ^C or an alarm }
+         ESysEIntr: exit; { 4; probably received ^C or an alarm }
       else
          raise EKernelError.Create(fpGetErrNo);
       end;
