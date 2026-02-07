@@ -12,12 +12,12 @@ interface
 type
    // for 8 bit numbers, use a regular pascal set.
    
-   TTightHashUtils16 = record // for storing numbers 1..2^16-2 (not zero)
-      class function Equals(const A, B: Word): Boolean; static; inline;
-      class function Hash(const A: Word): DWord; static; inline;
-      class function IsNotEmpty(const A: Word): Boolean; static; inline;
-      class function IsOccupied(const A: Word): Boolean; static; inline;
-      class function IsDeleted(const A: Word): Boolean; static; inline;
+   generic TTightHashUtils16 <T> = record // for storing numbers 0..2^16-3
+      class function Equals(const A, B: T): Boolean; static; inline;
+      class function Hash(const A: T): DWord; static; inline;
+      class function IsNotEmpty(const A: T): Boolean; static; inline;
+      class function IsOccupied(const A: T): Boolean; static; inline;
+      class function IsDeleted(const A: T): Boolean; static; inline;
       class procedure Clear(var Buffer; Count: Cardinal); static; inline;
       class procedure Delete(var Buffer; Count: Cardinal); static; inline;
    end;
@@ -93,6 +93,7 @@ type
       property Count: TSizeInt read FCount;
       property IsEmpty: Boolean read GetIsEmpty;
       property IsNotEmpty: Boolean read GetIsNotEmpty;
+      function Clone(): TTightHashSet; // this is optimized for cloning speed, not for memory compactness of the clone
     public
      type
        TEnumerator = class
@@ -117,40 +118,42 @@ implementation
 // a lot of this is just copied from hashset.pas/hashtable.pas
 
 uses
-   sysutils, hashfunctions;
+   sysutils, hashfunctions, typedump;
 
-class function TTightHashUtils16.Equals(const A, B: Word): Boolean;
+class function TTightHashUtils16.Equals(const A, B: T): Boolean;
 begin
    Result := A = B;
 end;
 
-class function TTightHashUtils16.Hash(const A: Word): DWord;
+class function TTightHashUtils16.Hash(const A: T): DWord;
 begin
-   Result := Integer16Hash32(A);
+   Result := Integer16Hash32(Word(A));
 end;
 
-class function TTightHashUtils16.IsNotEmpty(const A: Word): Boolean;
+class function TTightHashUtils16.IsNotEmpty(const A: T): Boolean;
 begin
-   Result := Word(A) <> 0;
+   Result := Word(A) <> $FFFE;
 end;
 
-class function TTightHashUtils16.IsOccupied(const A: Word): Boolean;
+class function TTightHashUtils16.IsOccupied(const A: T): Boolean;
 begin
-   Result := (Word(A) <> 0) and (Word(A) <> $FFFF);
+   Result := (Word(A) <> $FFFE) and (Word(A) <> $FFFF);
 end;
 
-class function TTightHashUtils16.IsDeleted(const A: Word): Boolean;
+class function TTightHashUtils16.IsDeleted(const A: T): Boolean;
 begin
    Result := Word(A) = $FFFF;
 end;
 
 class procedure TTightHashUtils16.Clear(var Buffer; Count: Cardinal);
 begin
-   FillWord(Buffer, Count, 0);
+   Assert(SizeOf(T) = SizeOf(Word));
+   FillWord(Buffer, Count, $FFFE);
 end;
 
 class procedure TTightHashUtils16.Delete(var Buffer; Count: Cardinal);
 begin
+   Assert(SizeOf(T) = SizeOf(Word));
    FillWord(Buffer, Count, $FFFF);
 end;
 
@@ -580,6 +583,16 @@ begin
    Result := False;
 end;
 
+function TTightHashSet.Clone(): TTightHashSet;
+begin
+   Result := TTightHashSet.Create(0);
+   GetMem(Result.FTable, FAllocated * SizeOf(T)); // $R-
+   Move(FTable^, Result.FTable^, FAllocated * SizeOf(T));
+   Result.FAllocated := FAllocated;
+   Result.FCount := FCount;
+end;
+
+      
 constructor TTightHashSet.TEnumerator.Create(const Owner: TTightHashSet);
 begin
    Assert(Assigned(Owner));

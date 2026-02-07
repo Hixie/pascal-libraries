@@ -34,6 +34,7 @@ type
    end;
 
    TObjectUtils = specialize DefaultUnorderedUtils <TObject>;
+   WordUtils = specialize DefaultNumericUtils <Word>;
    CardinalUtils = specialize DefaultNumericUtils <Cardinal>;
    LongIntUtils = specialize DefaultNumericUtils <LongInt>;
    IntegerUtils = specialize DefaultNumericUtils <Integer>;

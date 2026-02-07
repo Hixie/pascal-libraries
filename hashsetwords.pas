@@ -10,11 +10,14 @@ unit hashsetwords;
 
 interface
 
+uses
+   hashsettight;
+
 type
    generic TWordHashSet<T> = record
    strict private
       type
-         TBackingSet = TTightHashSet<T, specialize TTightHashUtils16<T>>;
+         TBackingSet = specialize TTightHashSet<T, specialize TTightHashUtils16<T>>;
       var
          FData: PtrUInt; // raw data, or TBackingSet
          // The raw data is stored as follows:
@@ -24,14 +27,21 @@ type
          // If the low bit is zero, then this a TBackingSet.
       class operator Initialize(var Rec: TWordHashSet);
       class operator Finalize(var Rec: TWordHashSet);
+      class operator AddRef(var Rec: TWordHashSet); // throws
+      class operator Copy(constref Source: TWordHashSet; var Destination: TWordHashSet); // throws
+      function GetCount(): Word;
+      function GetIsEmpty(): Boolean;
+      function GetIsNotEmpty(): Boolean;
     public
       procedure Reset(); // empty the set
       procedure Add(const Value: T);
       procedure Remove(const Value: T);
       function Has(const Value: T): Boolean;
-      property Count: Word read FCount;
+      property Count: Word read GetCount;
       property IsEmpty: Boolean read GetIsEmpty;
       property IsNotEmpty: Boolean read GetIsNotEmpty;
+      procedure CloneTo(var Output: TWordHashSet);
+      procedure MoveTo(var Output: TWordHashSet);
     public
      type
        TEnumerator = class
@@ -39,8 +49,9 @@ type
           FBackingEnumerator: TBackingSet.TEnumerator;
           FData: PtrUInt; // the zero to three values being enumerated
           function GetCurrent(): T;
-        public
+       public
           constructor Create(const Owner: TWordHashSet);
+          destructor Destroy(); override;
           function MoveNext(): Boolean;
           property Current: T read GetCurrent;
           function GetEnumerator(): TEnumerator;
@@ -48,10 +59,10 @@ type
       function GetEnumerator(): TEnumerator;
    end;
 
-   generic TObjectSet<T: class> = class (specialize TTightHashSet<T, TTightHashUtilsPtr>) end;
-   generic TInterfaceSet<T> = class (specialize TTightHashSet<T, TTightHashUtilsPtr>) end;
-
 implementation
+
+uses
+   sysutils;
 
 class operator TWordHashSet.Initialize(var Rec: TWordHashSet);
 begin
@@ -61,42 +72,94 @@ end;
 class operator TWordHashSet.Finalize(var Rec: TWordHashSet);
 begin
    if (Rec.FData and 1) = 0 then
-      FreeAndNil(TBackingSet(Pointer(Rec.FData)));
+      FreeAndNil(TBackingSet(Pointer(Rec.FData))); // {BOGUS Hint: Conversion between ordinals and pointers is not portable}
+end;
+
+class operator TWordHashSet.AddRef(var Rec: TWordHashSet);
+begin
+   raise Exception.Create('TWordHashSet cannot be copied.');
+end;
+
+class operator TWordHashSet.Copy(constref Source: TWordHashSet; var Destination: TWordHashSet);
+begin
+   raise Exception.Create('TWordHashSet cannot be copied.');
+end;
+
+function TWordHashSet.GetCount(): Word;
+begin
+   if ((FData and $0001) = $0000) then
+   begin
+      Result := TBackingSet(Pointer(FData)).Count; // {BOGUS Hint: Conversion between ordinals and pointers is not portable} // $R-
+   end
+   else
+   begin
+      Result := 0;
+      if (Word(FData shr 48) <> $FFFF) then
+         Inc(Result);
+      if (Word(FData shr 32) <> $FFFF) then
+         Inc(Result);
+      if (Word(FData shr 16) <> $FFFF) then
+         Inc(Result);
+   end;
+end;
+
+function TWordHashSet.GetIsEmpty(): Boolean;
+begin
+   if ((FData and $0001) = $0000) then
+   begin
+      Result := TBackingSet(Pointer(FData)).IsEmpty; // {BOGUS Hint: Conversion between ordinals and pointers is not portable}
+   end
+   else
+   begin
+      Result := FData = PtrUInt($FFFFFFFFFFFFFFFF);
+   end;
+end;
+
+function TWordHashSet.GetIsNotEmpty(): Boolean;
+begin
+   if ((FData and $0001) = $0000) then
+   begin
+      Result := TBackingSet(Pointer(FData)).IsNotEmpty; // {BOGUS Hint: Conversion between ordinals and pointers is not portable}
+   end
+   else
+   begin
+      Result := FData <> PtrUInt($FFFFFFFFFFFFFFFF);
+   end;
 end;
 
 procedure TWordHashSet.Reset();
 begin
    if ((FData and $0001) = $0000) then
-      TBackingSet(Pointer(FData)).Reset()
+      TBackingSet(Pointer(FData)).Reset() // {BOGUS Hint: Conversion between ordinals and pointers is not portable}
    else
       FData := PtrUInt($FFFFFFFFFFFFFFFF);
+   Assert(IsEmpty);
 end;
 
 procedure TWordHashSet.Add(const Value: T);
 var
    BackingSet: TBackingSet;
-   Index: Integer;
 begin
    if ((FData and $0001) = $0000) then
    begin
       // Proxy to backing set
-      TBackingSet(Pointer(FData)).Add(Value);
+      TBackingSet(Pointer(FData)).Add(Value); // {BOGUS Hint: Conversion between ordinals and pointers is not portable}
    end
    else
    begin
       Assert(not Has(Value));
       // Find highest word that is $FFFF
-      if Word(FData shr 48) = $FFFF then
+      if (Word(FData shr 48) = $FFFF) then
       begin
          FData := (FData and $0000FFFFFFFFFFFF) or (PtrUInt(Word(Value)) shl 48);
       end
       else
-      if Word(FData shr 32) = $FFFF then
+      if (Word(FData shr 32) = $FFFF) then
       begin
          FData := (FData and $FFFF0000FFFFFFFF) or (PtrUInt(Word(Value)) shl 32);
       end
       else
-      if Word(FData shr 16) = $FFFF then
+      if (Word(FData shr 16) = $FFFF) then
       begin
          FData := (FData and $FFFFFFFF0000FFFF) or (PtrUInt(Word(Value)) shl 16);
       end
@@ -114,17 +177,14 @@ begin
 end;
 
 procedure TWordHashSet.Remove(const Value: T);
-var
-   Index: Integer;
-   TempData: PtrUInt;
 begin
    if ((FData and $0001) = $0000) then
    begin
-      TBackingSet(Pointer(FData)).Remove(Value);
+      TBackingSet(Pointer(FData)).Remove(Value); // {BOGUS Hint: Conversion between ordinals and pointers is not portable}
    end
    else
    begin
-      Assert(not Has(Value));
+      Assert(Has(Value));
       if (Word((FData shr 48) and $FFFF) = Word(Value)) then
       begin
          FData := FData or PtrUInt($FFFF000000000000);
@@ -139,16 +199,16 @@ begin
       begin
          FData := FData or PtrUInt($00000000FFFF0000);
       end
+      else
+         raise Exception.Create('Remove was called with a value that is not in the set.');
    end;
 end;
 
 function TWordHashSet.Has(const Value: T): Boolean;
-var
-   Index: Integer;
 begin
    if ((FData and $0001) = $0000) then
    begin
-      Result := TBackingSet(Pointer(FData)).Has(Value);
+      Result := TBackingSet(Pointer(FData)).Has(Value); // {BOGUS Hint: Conversion between ordinals and pointers is not portable}
    end
    else
    begin
@@ -158,44 +218,72 @@ begin
    end;
 end;
 
+procedure TWordHashSet.CloneTo(var Output: TWordHashSet);
+begin
+   Finalize(Output);
+   if ((FData and $0001) = $0000) then
+   begin
+      Output.FData := PtrUInt(Pointer(TBackingSet(Pointer(FData)).Clone()));
+   end
+   else
+   begin
+      Output.FData := FData;
+   end;
+end;
+
+procedure TWordHashSet.MoveTo(var Output: TWordHashSet);
+begin
+   Finalize(Output);
+   Output.FData := FData;
+   FData := PtrUInt($FFFFFFFFFFFFFFFF);
+end;
+
 
 constructor TWordHashSet.TEnumerator.Create(const Owner: TWordHashSet);
 begin
    inherited Create();
-   if ((FData and $0001) = $0000) then
+   if ((Owner.FData and $0001) = $0000) then
    begin
-      FBackingEnumerator := TBackingSet(Pointer(FData)).GetEnumerator();
+      FBackingEnumerator := TBackingSet(Pointer(Owner.FData)).GetEnumerator(); // {BOGUS Hint: Conversion between ordinals and pointers is not portable}
    end
    else
    begin
+      Assert(not Assigned(FBackingEnumerator));
       FData := Owner.FData;
    end;
+end;
+
+destructor TWordHashSet.TEnumerator.Destroy();
+begin
+   FreeAndNil(FBackingEnumerator);
+   inherited;
 end;
 
 function TWordHashSet.TEnumerator.MoveNext(): Boolean;
 begin
    if (Assigned(FBackingEnumerator)) then
    begin
-      Result := FBackingEnumerator.MoveNext()
+      Result := FBackingEnumerator.MoveNext();
    end
    else
    begin
-      if (FData = PtrUInt($FFFFFFFFFFFFFFFF)) then
-      begin
-         Result := False;
-      end
-      else
+      while (FData <> PtrUInt($FFFFFFFFFFFFFFFF)) do
       begin
          FData := (FData shr 16) or PtrUInt($FFFF000000000000);
-         Result := Word(FData and $FFFF) <> $FFFF;
+         if (Word(FData and $FFFF) <> $FFFF) then
+         begin
+            Result := True;
+            exit;
+         end;
       end;
+      Result := False;
    end;
 end;
 
 function TWordHashSet.TEnumerator.GetCurrent(): T;
 begin
    if (Assigned(FBackingEnumerator)) then
-      Result := FBackingEnumerator.GetCurrent()
+      Result := FBackingEnumerator.Current // {BOGUS Hint: Conversion between ordinals and pointers is not portable}
    else
       Result := T(Word(FData and $FFFF));
 end;
@@ -207,7 +295,14 @@ end;
 
 function TWordHashSet.GetEnumerator(): TEnumerator;
 begin
-   Result := TEnumerator.Create(Self);
+   if (IsEmpty) then
+   begin
+      Result := nil;
+   end
+   else
+   begin
+      Result := TEnumerator.Create(Self);
+   end;
 end;
 
 end.
