@@ -13,6 +13,8 @@ type
    generic PlasticArray <T, Utils> = record
     private
      type
+      // Resist the temptation to add a variant of this that returns
+      // pointers to values, because those pointers won't be stable.
       PPlasticArray = ^PlasticArray;
       TArray = array of T;
      var

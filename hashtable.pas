@@ -132,7 +132,7 @@ type
       procedure Empty();
       procedure Remove(const Key: TKey);
       function Has(const Key: TKey): Boolean;
-      function AddDefault(const Key: TKey): PValue; inline; // adds the value as Default(TValue)
+      function AddDefault(const Key: TKey): PValue; inline; // adds the value as Default(TValue) (could have been called AddPtr)
       procedure Add(const Key: TKey; const Value: TValue); inline;
       function Clone(): THashTable;
       function GetOrAddPtr(const Key: TKey): PValue; // only useful with fully managed types, or if result is always entirely overwritten (otherwise there's no way to distinguish newly added values from existing values)
@@ -365,7 +365,7 @@ begin
       end;
       Entry := Entry^.Next;
    end;
-   Result := Default(TValue);
+   Result := Default(TValue); // TODO: return a missing value from the Utils instead
 end;
 
 function THashTable.GetPtr(const Key: TKey): PValue;
@@ -484,7 +484,7 @@ begin
    end
    else
    begin
-      Result := Default(TKey);
+      Result := Default(TKey); // TODO: return a missing value from the Utils instead
    end;
 end;
 
@@ -496,7 +496,7 @@ begin
    end
    else
    begin
-      Result := Default(TValue);
+      Result := Default(TValue); // TODO: return a missing value from the Utils instead
    end;
 end;
 
